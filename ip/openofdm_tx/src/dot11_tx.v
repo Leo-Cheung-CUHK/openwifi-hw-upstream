@@ -191,7 +191,12 @@ convenc convenc (
     .bit_in(bit_scram),
     .bits_out(bits_enc)
 );
-assign enc_reset = phy_tx_arest | state1 == S1_WAIT_PKT | plcp_bit_cnt == 23 | plcp_bit_cnt == 47;
+// L-SIG (24 bits) and HT-SIG (48 bits: HT-SIG1+HT-SIG2) are each one BCC block
+// (IEEE 802.11-2020 17.3.5.6, 19.3.9.4.3). plcp_bit_cnt restarts for HT-SIG, so the
+// "end of L-SIG" reset must not fire at bit 23 of HT-SIG.
+assign enc_reset = phy_tx_arest | state1 == S1_WAIT_PKT |
+                   (state1 == S1_L_SIG  && plcp_bit_cnt == 23) |
+                   (state1 == S1_HT_SIG && plcp_bit_cnt == 47);
 assign enc_en = state1 >= S1_L_SIG && state11 != S11_RESET && bits_enc_fifo_iready;
 
 //////////////////////////////////////////////////////////////////////////
