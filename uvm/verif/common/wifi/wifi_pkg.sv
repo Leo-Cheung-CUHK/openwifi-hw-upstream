@@ -42,7 +42,8 @@ package wifi_pkg;
     rand bit          ht_aggr;     // A-MPDU single-subframe (driver adds delimiter+CRC+pad)
     // MAC
     rand int unsigned mpdu_len;    // bytes without FCS (= skb->len in the driver)
-    rand byte unsigned mpdu[];
+    byte unsigned mpdu[];          // filled in post_randomize() (portable: no array-size constraints)
+    bit          keep_mpdu = 0;    // set to keep a caller-supplied payload across randomize()
     // TX-path control (driver tx_config)
     rand bit          need_ack;
     rand bit [1:0]    queue_idx;
@@ -54,7 +55,7 @@ package wifi_pkg;
 
     constraint c_rate  { if (ht) rate_hw inside {[0:7]}; else rate_hw inside {[4:11]}; }
     constraint c_sgi   { if (!ht) sgi == 0; if (!ht) ht_aggr == 0; }
-    constraint c_len   { mpdu_len inside {[14:1532]}; mpdu.size() == mpdu_len; }
+    constraint c_len   { mpdu_len inside {[14:1532]}; }
     constraint c_aggr  { ht_aggr == 0; }   // enable explicitly in A-MPDU tests
     constraint c_retry { retry_limit inside {[0:7]}; }
     // default: unicast QoS-less data-ish header; tests override via set_header()
@@ -71,6 +72,12 @@ package wifi_pkg;
       `uvm_field_int(fcs_ok, UVM_ALL_ON | UVM_NOCOMPARE)
     `uvm_object_utils_end
     function new(string name = "wifi_frame"); super.new(name); endfunction
+
+    function void post_randomize();
+      if (keep_mpdu && mpdu.size() == mpdu_len) return;
+      mpdu = new[mpdu_len];
+      foreach (mpdu[k]) mpdu[k] = 8'($urandom);
+    endfunction
 
     function string rate_str();
       return ht ? $sformatf("HT-MCS%0d%s", rate_hw, sgi ? "-SGI" : "") : $sformatf("%0dMbps", legacy_mbps(rate_hw));

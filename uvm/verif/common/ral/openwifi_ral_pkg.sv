@@ -5,6 +5,8 @@
 // (see tx_status_fifo.v), so they are RO + volatile and excluded from the built-in
 // register tests.  Registers that are not named by the driver are still modelled
 // (RSVD_n) so uvm_reg_hw_reset / bit-bash cover the whole slot.
+// Slots whose write case is commented out in <ip>_s_axi.v are RO (is_writable()):
+// found by running otx_reg_reset_test -- openofdm_tx only implements slv_reg0..2.
 package openwifi_ral_pkg;
   import uvm_pkg::*;
   `include "uvm_macros.svh"
@@ -26,6 +28,9 @@ package openwifi_ral_pkg;
     ow_reg regs[int];
     function new(string name); super.new(name, UVM_NO_COVERAGE); endfunction
     pure virtual function void get_defs(ref reg_def_t d[$], output int n_slots);
+    // slv_regs that the IP's *_s_axi.v really lets you write (write cases not commented
+    // out); every other slot is modelled RO + volatile (value may come from the design)
+    pure virtual function bit is_writable(int i);
 
     virtual function void build();
       reg_def_t d[$]; int n; string nm[int]; reg_def_t byidx[int];
@@ -36,6 +41,7 @@ package openwifi_ral_pkg;
         reg_def_t e;
         if (byidx.exists(i)) e = byidx[i];
         else begin e.idx = i; e.name = $sformatf("RSVD_%0d", i); e.acc = "RW"; e.vol = 0; e.no_test = 0; end
+        if (!is_writable(i)) begin e.acc = "RO"; e.vol = 1; e.no_test = 1; end
         regs[i] = ow_reg::type_id::create(e.name);
         regs[i].configure(this, null, "");
         regs[i].configure_field(e.acc, e.vol);
@@ -62,6 +68,7 @@ package openwifi_ral_pkg;
   class tx_intf_regs extends ow_block_base;
     `uvm_object_utils(tx_intf_regs)
     function new(string name = "tx_intf_regs"); super.new(name); endfunction
+    virtual function bit is_writable(int i); return i inside {0, 1, 2, [4:17]}; endfunction   // tx_intf_s_axi.v
     virtual function void get_defs(ref reg_def_t d[$], output int n_slots);
       n_slots = 32;
       d = '{`OW_REG(0,"MULTI_RST","RW"), `OW_REG(1,"ARBITRARY_IQ","RW"), `OW_REG(2,"WIFI_TX_MODE","RW"),
@@ -80,6 +87,7 @@ package openwifi_ral_pkg;
   class rx_intf_regs extends ow_block_base;
     `uvm_object_utils(rx_intf_regs)
     function new(string name = "rx_intf_regs"); super.new(name); endfunction
+    virtual function bit is_writable(int i); return i inside {[0:13], 16}; endfunction   // rx_intf_s_axi.v
     virtual function void get_defs(ref reg_def_t d[$], output int n_slots);
       n_slots = 32;
       d = '{`OW_REG(0,"MULTI_RST","RW"), `OW_REG(1,"MIXER_CFG","RW"), `OW_REG(2,"INTERRUPT_TEST","RW"),
@@ -95,6 +103,7 @@ package openwifi_ral_pkg;
   class openofdm_rx_regs extends ow_block_base;
     `uvm_object_utils(openofdm_rx_regs)
     function new(string name = "openofdm_rx_regs"); super.new(name); endfunction
+    virtual function bit is_writable(int i); return i inside {[0:5], [17:19]}; endfunction   // openofdm_rx_s_axi.v
     virtual function void get_defs(ref reg_def_t d[$], output int n_slots);
       n_slots = 32;
       d = '{`OW_REG(0,"MULTI_RST","RW"), `OW_REG(1,"ENABLE","RW"), `OW_REG(2,"POWER_THRES","RW"),
@@ -107,6 +116,7 @@ package openwifi_ral_pkg;
   class openofdm_tx_regs extends ow_block_base;
     `uvm_object_utils(openofdm_tx_regs)
     function new(string name = "openofdm_tx_regs"); super.new(name); endfunction
+    virtual function bit is_writable(int i); return i inside {[0:2]}; endfunction   // openofdm_tx_s_axi.v
     virtual function void get_defs(ref reg_def_t d[$], output int n_slots);
       n_slots = 32;
       d = '{`OW_REG(0,"MULTI_RST","RW"), `OW_REG(1,"INIT_PILOT_STATE","RW"), `OW_REG(2,"INIT_DATA_STATE","RW")};
@@ -116,6 +126,7 @@ package openwifi_ral_pkg;
   class xpu_regs extends ow_block_base;
     `uvm_object_utils(xpu_regs)
     function new(string name = "xpu_regs"); super.new(name); endfunction
+    virtual function bit is_writable(int i); return i inside {[0:13], [16:22], [26:31]}; endfunction   // xpu_s_axi.v
     virtual function void get_defs(ref reg_def_t d[$], output int n_slots);
       n_slots = 64;
       d = '{`OW_REG(0,"MULTI_RST","RW"), `OW_REG(1,"SRC_SEL","RW"), `OW_REG(2,"TSF_LOAD_VAL_LOW","RW"),
@@ -138,6 +149,7 @@ package openwifi_ral_pkg;
   class side_ch_regs extends ow_block_base;
     `uvm_object_utils(side_ch_regs)
     function new(string name = "side_ch_regs"); super.new(name); endfunction
+    virtual function bit is_writable(int i); return i inside {[0:12], 19}; endfunction   // side_ch_s_axi.v
     virtual function void get_defs(ref reg_def_t d[$], output int n_slots);
       n_slots = 32;
       d = '{`OW_REG(0,"MULTI_RST","RW"), `OW_REG(1,"CONFIG","RW"), `OW_REG(2,"NUM_DMA_SYMBOL","RW"),

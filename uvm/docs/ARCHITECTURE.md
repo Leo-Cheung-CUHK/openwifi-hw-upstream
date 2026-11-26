@@ -247,6 +247,34 @@ Compile notes handled by the scripts:
 
 ## 8. Findings while building the environment
 
+0. **HT-SIG is BCC-encoded as two separate 24-bit blocks (bug: HT frames ≥ 1024 bytes).**
+   `dot11_tx.v` line 194 resets the convolutional encoder at `plcp_bit_cnt == 23`, meant for the
+   end of L-SIG; `plcp_bit_cnt` restarts for HT-SIG, so it also fires in the middle of the 48-bit
+   HT-SIG. IEEE 802.11-2020 19.3.9.4.3 encodes HT-SIG1+HT-SIG2 as one block. The encoder state
+   carried into HT-SIG2 is HT-LENGTH[15:10], so the transmitted HT-SIG2 is only correct while the
+   PSDU is < 1024 bytes. Found by `otx_rate_sweep_test` + `check_tx_dumps.py` (all 16 HT
+   1500-byte packets fail at symbol 4, EVM ≈ −8 dB; the boundary is exactly 1023/1024 bytes).
+   The RTL waveform matches the reference to −74 dB if the reference restarts the encoder at
+   bit 24. One-line fix, verified at −72 dB across legacy/HT, LGI/SGI, 14–1500 B:
+   ```verilog
+   assign enc_reset = phy_tx_arest | state1 == S1_WAIT_PKT |
+                      (state1 == S1_L_SIG && plcp_bit_cnt == 23) | (state1 == S1_HT_SIG && plcp_bit_cnt == 47);
+   ```
+   Impact to confirm on air: a standards-compliant receiver decodes HT-SIG with one Viterbi pass
+   and would see a CRC error (frame lost) for long HT frames; openofdm_rx should be checked for the
+   mirror-image behaviour, which would hide the bug in openwifi-to-openwifi tests.
+0b. **First packet after `hw_init` has wrong pilot polarity.** `dot11_tx.v` loads
+   `pilot_scram_state` from `INIT_PILOT_STATE` only on `reset_int` (reset or end of a packet),
+   while the data scrambler reloads every packet. The driver (`openofdm_tx.c hw_init`) pulses
+   `MULTI_RST` and writes `INIT_PILOT_STATE` afterwards, so the first frame uses the seed latched
+   at reset (0). Reproduced in `otx_rate_sweep_test` (packet 1, pilot error ≈ −4 dB EVM on
+   affected symbols); writing the seeds before the reset pulse (`+OTX_SEEDS_FIRST`) fixes it.
+   Fix in the driver (reorder) or the RTL (reload the pilot seed at packet start).
+0c. **Register map: many slv_regs are not writable.** The write cases of several `*_s_axi.v`
+   files are commented out (openofdm_tx implements only slv_reg0..2). Found by
+   `otx_reg_reset_test`'s bit-bash; the RAL now models non-writable slots as RO
+   (`is_writable()` per IP, derived from the RTL).
+
 1. **openofdm_tx drops the last I/Q sample under tx_intf back-pressure (likely bug, low impact).**
    `dot11_tx.v` (S3_DATA) raises `phy_tx_done`/`FSM3_reset` when `sent == nof_iq2send-2`
    independent of `result_iq_ready`. With a hold pattern that follows tx_iq_intf's rule
@@ -274,6 +302,23 @@ Compile notes handled by the scripts:
 ---
 
 ## 9. What has been checked, what has not
+
+**UVM simulation (Verilator 5.055-devel + z3, Accellera uvm-core 2020-3.0, `make run SIM=verilator`):**
+
+| test | result |
+|---|---|
+| `otx_reg_reset_test` | PASS (after the RAL fix in 0c) |
+| `otx_random_test` (50 frames, ≤ 400 B) | PASS: 50/50 lengths, 50/50 EVM ≈ −73 dB |
+| `otx_rate_sweep_test` (72 frames) | 72/72 lengths OK; EVM 56/72 — the 16 HT 1500 B frames fail (finding 0); packet 1 fails with driver init order (0b) |
+| `otx_backpressure_test` | FAIL as predicted: `a_no_pending_at_done` fires (finding 1) |
+
+Testbench bugs fixed while bringing this up: payload randomisation moved to
+`post_randomize()` (no dynamic-array size constraints), 16 µs interframe gap in the BRAM
+server, burst end-of-packet timeout raised to 1000 clocks, BRAM image read by the PHY now
+checked against `bram_words()`. Other TBs need the XPM sources (`$XILINX_VIVADO`) or the
+Xilinx IP models and have not been simulated yet.
+
+Earlier static checks:
 
 Checked here:
 * All seven TBs (block ×6 + chip) parse and elaborate with **slang** against Accellera

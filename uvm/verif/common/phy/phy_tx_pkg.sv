@@ -21,6 +21,8 @@ package phy_tx_pkg;
     int unsigned  hold_pct     = 0;    // HOLD_RANDOM: % of cycles with tx_hold=1
     int unsigned  fifo_th      = 420;  // HOLD_FIFO_MODEL: TX_HOLD_THRESHOLD (driver default)
     int unsigned  drain_clks   = 5;    // HOLD_FIFO_MODEL: clocks per 20 Msps sample
+    int unsigned  ifs_clks     = 1600; // BRAM server: idle after phy_tx_done before the next frame
+                                       // (16 us SIFS @100 MHz; real frames are never back to back)
     int unsigned  acc_clk_per_sample = 5;
     int unsigned  acc_start_latency  = 20;  // clocks from phy_tx_start to phy_tx_started
     `uvm_object_utils(phy_tx_cfg)
@@ -88,6 +90,7 @@ package phy_tx_pkg;
         sent_ap.write(req);
         vif.srv_cb.phy_tx_start <= 1; @(vif.srv_cb); vif.srv_cb.phy_tx_start <= 0;
         do @(vif.srv_cb); while (!vif.srv_cb.phy_tx_done);
+        repeat (cfg.ifs_clks) @(vif.srv_cb);
         seq_item_port.item_done();
       end
     endtask
@@ -140,9 +143,11 @@ package phy_tx_pkg;
     `uvm_component_utils(phy_tx_monitor)
     virtual phy_tx_if vif; phy_tx_cfg cfg;
     uvm_analysis_port #(phy_tx_obs) ap;
+    bit trace; int trace_fd, trace_cyc;     // +PHY_TX_TRACE=<file>: per-cycle log of the first packet
     function new(string name, uvm_component parent); super.new(name, parent); ap = new("ap", this); endfunction
     task run_phase(uvm_phase phase);
-      phy_tx_obs o; bit [9:0] a_pipe[$];
+      phy_tx_obs o; bit [9:0] a_pipe[$]; string tf;
+      if ($value$plusargs("PHY_TX_TRACE=%s", tf)) begin trace = 1; trace_fd = $fopen(tf, "w"); end
       forever begin
         @(vif.mon_cb);
         if (!vif.rst_n) begin o = null; a_pipe.delete(); continue; end
@@ -150,6 +155,8 @@ package phy_tx_pkg;
           o = phy_tx_obs::type_id::create("obs"); o.t_start = $time; a_pipe.delete();
         end
         if (o == null) continue;
+        if (trace) $fdisplay(trace_fd, "%0d %03h %016h %0b %0b", ++trace_cyc, vif.mon_cb.bram_addr, vif.mon_cb.bram_din,
+                             vif.mon_cb.result_iq_valid, vif.mon_cb.tx_hold);
         // address issued at cycle t is answered at t+latency
         a_pipe.push_back(vif.mon_cb.bram_addr);
         if (a_pipe.size() > cfg.bram_latency) begin
@@ -162,6 +169,7 @@ package phy_tx_pkg;
           o.t_done = $time;
           `uvm_info("PHY_TX_MON", $sformatf("tx done: %0d words seen, %0d IQ", o.words.size(), o.n_iq), UVM_MEDIUM)
           ap.write(o); o = null;
+          if (trace) begin $fclose(trace_fd); trace = 0; end
         end
       end
     endtask

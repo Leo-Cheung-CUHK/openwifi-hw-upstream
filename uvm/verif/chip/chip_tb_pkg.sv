@@ -151,7 +151,7 @@ package chip_tb_pkg;
     function void build_phase(uvm_phase phase);
       phy_tx_cfg pc = phy_tx_cfg::type_id::create("pc"); iq_cfg ic = iq_cfg::type_id::create("ic");
       pc.role = PHY_TX_BRAM_SERVER;
-      ic.pack = PACK_IQ32; ic.end_gap_clks = 200; ic.end_gap_samples = 100000; ic.use_ready = 1;
+      ic.pack = PACK_IQ32; ic.end_gap_clks = 1000; ic.end_gap_samples = 100000; ic.use_ready = 1;
       uvm_config_db#(phy_tx_cfg)::set(this, "ptx", "cfg", pc);
       uvm_config_db#(iq_cfg)::set(this, "tx_iq", "cfg", ic);
       uvm_config_db#(uvm_active_passive_enum)::set(this, "tx_iq", "is_active", UVM_PASSIVE);

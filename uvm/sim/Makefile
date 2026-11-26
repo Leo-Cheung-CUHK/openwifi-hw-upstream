@@ -9,6 +9,8 @@
 #
 # TB = openofdm_tx | openofdm_rx | tx_intf | rx_intf | xpu | side_ch | chip
 # SIM = xsim (Vivado 2022.2, UVM 1.2 built in) | questa | vcs | xcelium
+#     | verilator (>= 5.05x built from source, + z3 solver, UVM_SRC=<uvm-core/src>; no licence;
+#       TBs without Xilinx IP only: openofdm_tx today, the others once XPM sources are available)
 
 OW_HW          ?= $(abspath ../..)
 OW_UVM         := $(abspath ..)
@@ -152,6 +154,20 @@ run:
 	mkdir -p $(RUN) && cd $(RUN) && ln -sf $(OW_HW)/ip/openofdm_tx/src/icmem_*.mem . && \
 	xrun -64bit -uvm -timescale 1ns/1ps $(INCS) $(DEFS) $(XPM_SRC) $(GLBL) $(COMMON) $(RTL_F) $(SRC_$(TB)) \
 	  -top $(TOP) -top glbl -svseed $(SEED) +UVM_TESTNAME=$(TEST) +UVM_VERBOSITY=$(VERB) $(PLUSARGS) | tee sim.log
+endif
+
+# ---------------------------------------------------------------- Verilator (open source)
+VERILATOR ?= verilator
+ifeq ($(SIM),verilator)
+compile:
+	mkdir -p $(RUN) && cd $(RUN) && \
+	$(VERILATOR) --binary --timing -j $$(nproc) -Wno-fatal -Wno-lint -Wno-style -Wno-WIDTH -Wno-USEBEFOREDECL \
+	  --top-module $(TOP) +define+UVM_NO_DPI $(DEFS) +incdir+$(UVM_SRC) $(INCS) \
+	  $$( [ "$(XIP)" = "1" -o "$(TB)" != "openofdm_tx" ] && echo $(XPM_SRC) ) \
+	  $(UVM_SRC)/uvm_pkg.sv $(COMMON) $(RTL_F) $(SRC_$(TB)) -o simv > build.log 2>&1 || (grep %Error build.log | head; exit 1)
+run: compile
+	cd $(RUN) && ln -sf $(OW_HW)/ip/openofdm_tx/src/icmem_*.mem . && \
+	./obj_dir/simv +UVM_TESTNAME=$(TEST) +UVM_VERBOSITY=$(VERB) +verilator+seed+$(SEED) $(PLUSARGS) | tee sim.log
 endif
 
 # ---------------------------------------------------------------- regression

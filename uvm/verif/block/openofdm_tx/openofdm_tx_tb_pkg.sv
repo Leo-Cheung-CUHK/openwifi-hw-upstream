@@ -20,7 +20,7 @@ package openofdm_tx_tb_pkg;
     uvm_analysis_imp_sent #(wifi_frame, otx_scoreboard) sent_imp;
     uvm_analysis_imp_iq   #(iq_item,    otx_scoreboard) iq_imp;
     uvm_analysis_imp_obs  #(phy_tx_obs, otx_scoreboard) obs_imp;
-    wifi_frame exp_q[$];
+    wifi_frame exp_q[$], obs_q[$];
     string dump_dir = "";
     int n_ok, n_err, n_pkt;
     function new(string name, uvm_component parent);
@@ -30,8 +30,13 @@ package openofdm_tx_tb_pkg;
     function void build_phase(uvm_phase phase);
       void'($value$plusargs("TX_DUMP_DIR=%s", dump_dir));
     endfunction
-    function void write_sent(wifi_frame f); exp_q.push_back(f); endfunction
+    function void write_sent(wifi_frame f); exp_q.push_back(f); obs_q.push_back(f); endfunction
     function void write_obs(phy_tx_obs o);
+      // the BRAM words the PHY actually read must be the image the server was given
+      if (obs_q.size()) begin
+        wifi_frame f = obs_q.pop_front(); string w = o.check(f);
+        if (w != "") `uvm_error("OTX_SB", {"BRAM read by PHY: ", w})
+      end
       // latency sanity: started must follow start; done must follow started
       if (!(o.t_started > o.t_start && o.t_done > o.t_started))
         `uvm_error("OTX_SB", $sformatf("bad phase order start=%0t started=%0t done=%0t", o.t_start, o.t_started, o.t_done))
@@ -75,7 +80,8 @@ package openofdm_tx_tb_pkg;
       pc.role = PHY_TX_BRAM_SERVER;
       if ($value$plusargs("HOLD_PCT=%d", pc.hold_pct)) pc.hold_mode = HOLD_RANDOM;
       void'($value$plusargs("HOLD_FIFO_TH=%d", pc.fifo_th));
-      ic.pack = PACK_IQ32; ic.end_gap_clks = 200; ic.end_gap_samples = 100000;  // close on strobe silence only
+      ic.pack = PACK_IQ32; ic.end_gap_clks = 1000; ic.end_gap_samples = 100000; // close on strobe silence only:
+                                                      // > max gap inside a packet (~300 clk after the preamble at 12+ Mbps), < ifs_clks
       ic.use_ready = 1;                                                           // ready = ~tx_hold
       if ($test$plusargs("HOLD_FIFO")) pc.hold_mode = HOLD_FIFO_MODEL;           // tx_intf-like back-pressure
       uvm_config_db#(phy_tx_cfg)::set(this, "ptx", "cfg", pc);

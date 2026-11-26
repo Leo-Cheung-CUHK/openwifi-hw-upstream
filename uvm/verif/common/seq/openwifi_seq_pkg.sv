@@ -59,8 +59,14 @@ package openwifi_seq_pkg;
     `uvm_object_utils(openofdm_tx_init_seq)
     openofdm_tx_regs rb;
     bit [6:0] pilot_state = 7'h7F, data_state = 7'h7F;
+    // Driver order (reset, then seeds) leaves the FIRST packet with the pilot seed latched
+    // at reset (0): dot11_tx.v loads pilot_scram_state only on reset_int. +OTX_SEEDS_FIRST
+    // writes the seeds before the reset pulse (the driver-side workaround).
+    bit seeds_first = 0;
     function new(string name = "openofdm_tx_init_seq"); super.new(name); endfunction
     task body();
+      if ($test$plusargs("OTX_SEEDS_FIRST")) seeds_first = 1;
+      if (seeds_first) begin wr(rb, "INIT_PILOT_STATE", pilot_state); wr(rb, "INIT_DATA_STATE", data_state); end
       pulse_rst(rb);
       wr(rb, "INIT_PILOT_STATE", pilot_state);
       wr(rb, "INIT_DATA_STATE",  data_state);
