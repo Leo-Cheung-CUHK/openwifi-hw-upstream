@@ -294,8 +294,6 @@ bug A in openwifi-to-openwifi links); interoperability of long HT frames with a 
 
 **UVM simulation (Verilator 5.055-devel + z3, Accellera uvm-core 2020-3.0, `make run SIM=verilator`):**
 
-| test | result |
-|---|---|
 | test | upstream fa6c896 | with fixes A–D |
 |---|---|---|
 | `otx_reg_reset_test` | PASS (after the RAL fix 0c) | PASS |
@@ -308,6 +306,22 @@ Testbench bugs fixed while bringing this up: payload randomisation moved to
 server, burst end-of-packet timeout raised to 1000 clocks, BRAM image read by the PHY now
 checked against `bram_words()`. Other TBs need the XPM sources (`$XILINX_VIVADO`) or the
 Xilinx IP models and have not been simulated yet.
+
+**Independent receiver (`scripts/py_rx_decode.py`, openofdm `decode.py`):** the TX IQ
+captures are decoded by openofdm's own Python receiver (Viterbi, soft decisions); PSDU and
+FCS are compared with the frame the sequence sent.
+
+| captures | result |
+|---|---|
+| fixed RTL, `otx_rate_sweep_test` (72 frames, legacy 6–54 M, HT MCS0–7, LGI/SGI, 14–1500 B) | 72/72 |
+| upstream fa6c896, frames 0001/0030/0046/0069 | 4/4, including the two HT 1500 B frames that bug A breaks |
+
+The receiver hides bug A. The extra encoder reset changes only a few coded bits at the
+HT-SIG1→HT-SIG2 boundary (and only when the length's high bits are non-zero). On a
+noise-free capture the Viterbi decoder corrects those bits, so the frame decodes. The
+encoding is still non-compliant and costs HT-SIG margin at low SNR. The bit-exact
+`check_tx_dumps.py` comparison is the check that catches it.
+`python3 scripts/py_rx_decode.py <dump_dir> [-j N] [-v]` exits 1 on any mismatch.
 
 Earlier static checks:
 
