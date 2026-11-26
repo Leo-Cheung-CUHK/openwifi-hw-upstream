@@ -626,6 +626,12 @@ end else begin
         state2 <= S2_PUNC_INTERLV;
     end
     endcase
+
+    // Reload the pilot scrambler seed at every packet start, like data_scram_state.
+    // Loading it only on reset_int meant the first packet after a reset used whatever
+    // INIT_PILOT_STATE held during reset (the driver writes it after MULTI_RST).
+    if (phy_tx_start)
+        pilot_scram_state <= init_pilot_scram_state;
 end
 assign dbps_size = PKT_TYPE == LEGACY ? (ofdm_cnt_FSM2 > 0 ? N_DBPS : 24) : (ofdm_cnt_FSM2 > 2 ? N_DBPS : 24);
 
