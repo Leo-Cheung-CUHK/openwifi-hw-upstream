@@ -1,0 +1,94 @@
+#!/usr/bin/env python3
+"""
+prep_rtl.py - collect openwifi-hw RTL into a simulator-agnostic build tree.
+
+Why: Vivado packages each user IP separately, so module names may collide between
+IPs without harm on the FPGA.  In one simulation they do collide, and some
+collisions are NOT identical code (e.g. mv_avg.v in rx_intf differs from the one
+in xpu/openofdm_rx).  This script copies each IP into build/rtl/<ip>/ and renames
+every module that is defined by more than one IP to <ip>__<module>, rewriting the
+instantiations inside that IP.  Identical and non-identical duplicates are handled
+the same way so the rule stays simple.
+
+It also writes build/rtl/<ip>.f filelists and build/rtl/all.f.
+
+Usage: prep_rtl.py --hw <openwifi-hw> [--out build/rtl]
+"""
+import argparse, collections, os, re, shutil
+
+IPS = {
+    "openofdm_rx": "ip/openofdm_rx/verilog",
+    "openofdm_tx": "ip/openofdm_tx/src",
+    "rx_intf":     "ip/rx_intf/src",
+    "tx_intf":     "ip/tx_intf/src",
+    "xpu":         "ip/xpu/src",
+    "side_ch":     "ip/side_ch/src",
+}
+# testbenches / unused models that live next to the RTL
+EXCLUDE = re.compile(r"(_tb\.v$|^rand_gen_tb\.v$)")
+MOD_RE = re.compile(r"^\s*module\s+(\w+)", re.M)
+
+
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--hw", required=True)
+    ap.add_argument("--out", default="build/rtl")
+    a = ap.parse_args()
+
+    files, copy_all = {}, {}
+    owners = collections.defaultdict(set)
+    for ip, d in IPS.items():
+        src = os.path.join(a.hw, d)
+        fl = sorted(f for f in os.listdir(src) if f.endswith(".v") and not EXCLUDE.search(f))
+        files[ip] = []
+        for f in fl:
+            mods = MOD_RE.findall(open(os.path.join(src, f), errors="ignore").read())
+            if mods:                      # files without a module are `include-only
+                files[ip].append(f)
+            for m in mods:
+                owners[m].add(ip)
+        copy_all[ip] = fl
+    shared = {m for m, s in owners.items() if len(s) > 1}
+
+    os.makedirs(a.out, exist_ok=True)
+    allf = []
+    for ip, d in IPS.items():
+        src = os.path.join(a.hw, d)
+        dst = os.path.join(a.out, ip)
+        shutil.rmtree(dst, ignore_errors=True)
+        os.makedirs(dst)
+        for f in copy_all[ip]:
+            t = open(os.path.join(src, f), errors="ignore").read()
+            for m in shared:
+                # definition and instantiation:  module m  /  m #(  /  m inst (
+                t = re.sub(rf"(\bmodule\s+){m}\b", rf"\g<1>{ip}__{m}", t)
+                t = re.sub(rf"^(\s*){m}(\s*(#|\w+\s*\())", rf"\g<1>{ip}__{m}\2", t, flags=re.M)
+            if f in files[ip]:
+                # RTL is Verilog-2005 (uses 'bit' as a port name etc.); keep SV keywords
+                # out of it even when the simulator compiles everything in SV mode.
+                t = '`begin_keywords "1364-2005"\n' + t + '\n`end_keywords\n'
+            open(os.path.join(dst, f), "w").write(t)
+        # board_def.v sits in ip/ and is copied into each IP by boards/ip_repo_gen.tcl
+        shutil.copy(os.path.join(a.hw, "ip", "board_def.v"), dst)
+        # copy LUT init files ($readmemh targets etc.)
+        for f in os.listdir(src):
+            if f.endswith((".mif", ".coe", ".mem", ".hex")):
+                shutil.copy(os.path.join(src, f), dst)
+        fl = os.path.join(a.out, f"{ip}.f")
+        with open(fl, "w") as fh:
+            fh.write(f"+incdir+{os.path.abspath(dst)}\n")
+            # `define-only include files first (some RTL relies on compile order for them)
+            for f in copy_all[ip]:
+                if f not in files[ip]:
+                    body = open(os.path.join(src, f), errors="ignore").read()
+                    if "`define" in body and "localparam" not in body:
+                        fh.write(os.path.abspath(os.path.join(dst, f)) + "\n")
+            for f in files[ip]:
+                fh.write(os.path.abspath(os.path.join(dst, f)) + "\n")
+        allf.append(f"-f {os.path.abspath(fl)}")
+    open(os.path.join(a.out, "all.f"), "w").write("\n".join(allf) + "\n")
+    print("renamed shared modules:", ", ".join(sorted(shared)) or "none")
+
+
+if __name__ == "__main__":
+    main()

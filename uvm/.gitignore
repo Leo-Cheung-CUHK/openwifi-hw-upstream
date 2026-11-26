@@ -1,0 +1,3 @@
+build/
+sim/verilator_tx_smoke/work*/
+__pycache__/
