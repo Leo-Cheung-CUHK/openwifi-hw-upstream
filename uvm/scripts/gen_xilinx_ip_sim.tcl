@@ -3,7 +3,7 @@
 #    div_for_rotafft, div_gen_csi_over_nova)
 #
 # vivado -mode batch -source gen_xilinx_ip_sim.tcl -tclargs <openwifi-hw> <out_dir> <part> <simulator> [lib_map_path]
-#   part      : xczu48dr-ffvg1517-2-e (RFSoC4x2) / xczu9eg-ffvb1156-2-e (ZCU102) -> zynquplus xci
+#   part      : xc7z045ffg900-2 (ZC706) -> zynq xci; xczu9eg-ffvb1156-2-e (ZCU102) / xczu48dr-ffvg1517-2-e (RFSoC4x2) -> zynquplus xci
 #               any xc7z* part                                             -> zynq xci
 #   simulator : xsim | questa | vcs | xcelium | riviera
 #   lib_map_path : compile_simlib output (required for 3rd-party simulators)

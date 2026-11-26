@@ -14,10 +14,11 @@
 
 OW_HW          ?= $(abspath ../..)
 OW_UVM         := $(abspath ..)
-# block design used for the chip wrapper (rfsoc4x2 once its board dir is available)
-BOARD          ?= zcu102_fmcs2
-# RFSoC4x2; selects the zynquplus Xilinx IP variants
-PART           ?= xczu48dr-ffvg1517-2-e
+# block design used for the chip wrapper; first hardware target is ZC706 + FMCOMMS2/3/4
+# (other boards: zcu102_fmcs2 + PART=xczu9eg-ffvb1156-2-e, rfsoc4x2 once its board dir exists)
+BOARD          ?= zc706_fmcs2
+# Zynq-7045 on ZC706; selects the 'zynq' (7-series) Xilinx IP variants
+PART           ?= xc7z045ffg900-2
 SIM            ?= xsim
 TB             ?= openofdm_tx
 SEED           ?= 1

@@ -115,6 +115,15 @@ def main():
                  "led0", "led1", "led2", "led3", "led4", "led5",
                  "gpio_pmod1_0", "gpio_pmod1_1", "gpio_pmod1_2"}
 
+    # hierarchy pins of openwifi_ip that the system-level BD connects to something
+    sys_driven = set()
+    for kind in ("nets", "interface_nets"):
+        for net in bd["design"].get(kind, {}).values():
+            for e in net.get("ports", []) + net.get("interface_ports", []):
+                if e.startswith("openwifi_ip/"):
+                    sys_driven.add(e.split("/", 1)[1])
+    keep_extra = set()
+
     for _, net in ow["nets"].items():
         eps = net["ports"]
         # clock / reset nets of the AXI domain
@@ -141,6 +150,13 @@ def main():
                     name = e; break
             if name is None:
                 print(f"WARN no driver for net {eps}", file=sys.stderr); continue
+            if name in hier_ports and name not in keep_hier:
+                if name not in sys_driven:
+                    # hierarchy input left open in the system BD: the IP pins it feeds
+                    # stay unconnected and are tied to 0 below (listed in the NOTE)
+                    print(f"INFO hierarchy input {name} unconnected in system.bd, tied to 0", file=sys.stderr)
+                    continue
+                keep_extra.add(name)
         # width for glue-driven nets resolved from any IP sink
         if w is None:
             for e in eps:
@@ -154,7 +170,7 @@ def main():
         is_top = False
         for e in eps:
             if "/" not in e:
-                if e in keep_hier:
+                if e in keep_hier or e in keep_extra:
                     d = "input" if hier_ports[e]["direction"] == "I" else "output"
                     top_ports.append((d, w, e))
                     if e != name:

@@ -34,9 +34,9 @@ module tb_chip;
     .adc_clk(adc_clk), .adc_rst(adc_rst), .adc_data(adc.data), .adc_valid(adc.valid),
     .dac_data(dac.data), .dac_valid(), .dac_ready(1'b1),
     .gpio_status(8'h00),
-    .spi0_csn(1'b1), .spi0_mosi(1'b0), .spi0_sclk(1'b0), .spi_csn(), .spi_mosi(), .spi_sclk(),
+    .spi0_csn(1'b1), .spi0_mosi(1'b0), .spi0_sclk(1'b0),
     .rx_pkt_intr(irq.rx_pkt_intr), .tx_itrpt(irq.tx_itrpt), .dma1_s2mm_intr(1'b0),
-    .led0(), .led1(), .led2(), .led3(), .gpio_pmod1_0(), .gpio_pmod1_1(), .gpio_pmod1_2(),
+    // board debug outputs (LEDs, PMOD, AD9361 SPI) differ per BD and are left open
     .s_axis_tx_tready(dma_tx.tready), .s_axis_tx_tdata(dma_tx.tdata), .s_axis_tx_tstrb(dma_tx.tstrb),
     .s_axis_tx_tlast(dma_tx.tlast), .s_axis_tx_tvalid(dma_tx.tvalid),
     .m_axis_rx_tvalid(dma_rx.tvalid), .m_axis_rx_tdata(dma_rx.tdata), .m_axis_rx_tstrb(dma_rx.tstrb),

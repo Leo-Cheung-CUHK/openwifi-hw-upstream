@@ -24,7 +24,7 @@ cd uvm/sim
 make prep                                          # regenerate wrapper from system.bd + per-IP RTL tree
 make smoke                                         # Verilator, no licence
 make run   TB=openofdm_tx TEST=otx_rate_sweep_test SIM=xsim
-make xip   SIM=xsim PART=xczu48dr-ffvg1517-2-e     # once, for openofdm_rx and chip
+make xip   SIM=xsim                                # once, for openofdm_rx and chip (PART defaults to ZC706's xc7z045ffg900-2)
 make run   TB=chip TEST=chip_ack_test SIM=xsim
 ```
 

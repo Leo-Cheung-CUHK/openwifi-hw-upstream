@@ -108,10 +108,23 @@ The manifest check closes a gap: `make prep` copies RTL into `uvm/build/rtl`. If
 `ip/` and forgets to rerun it, the UVM results describe different RTL from the RTL that gets built.
 (This happened once while fixing bugs A–D.)
 
-**RFSoC.** The `rfsoc4x2` board is listed in the README but `boards/rfsoc4x2/` is not in this
-checkout (master @ fa6c896). It has to come from openwifi's RFSoC branch or release before S3–S6 can
-target RFSoC. Until then, run S3 on `zcu102_fmcs2` (same UltraScale+ family, licence needed) or
-`zed_fmcs2` / `adrv9364z7020` (no licence) to bring up the flow.
+**First hardware target: ZC706 + FMCOMMS2/3/4 (`zc706_fmcs2`).** Zynq-7045, part
+`xc7z045ffg900-2`, AD9361 front-end. This is now the default `BOARD`/`PART` in `sim/Makefile`, so the
+chip TB wrapper, the Xilinx IP models (7-series `zynq` variants of openofdm_rx's IP) and S3 all use the
+same block design.
+* Licence: the 7z045 is not covered by the free Vivado edition. Use the device-locked licence that
+  ships with the ZC706 kit, plus the Viterbi Decoder evaluation licence.
+* Board prerequisites from the openwifi-hw README:
+  `./prepare_adi_lib.sh $XILINX_DIR`, `./prepare_adi_board_ip.sh $XILINX_DIR zc706_fmcs2`,
+  `./get_ip_openofdm_rx.sh`, then `cd boards/zc706_fmcs2 && ../create_ip_repo.sh $XILINX_DIR`.
+* Clock: `NUM_CLK_PER_US` 100 (default) or 200 on zc706. Start with 100; the UVM env takes it from the same define.
+* Wrapper differences from zcu102: no LED/PMOD/SPI debug outputs on the hierarchy, and `tx_intf.dma_data/dma_valid`
+  are hierarchy inputs the system BD leaves open. `gen_core_top.py` now ties such inputs to 0 (they would
+  otherwise have floated to X).
+
+**RFSoC later.** `rfsoc4x2` is listed in the README but `boards/rfsoc4x2/` is not in this checkout
+(master @ fa6c896). Once it comes from openwifi's RFSoC branch or release, repeat S3–S6 with
+`BOARD=rfsoc4x2 PART=xczu48dr-ffvg1517-2-e` and add the RF-DC adapter TB (ARCHITECTURE.md §6).
 
 ---
 
@@ -172,12 +185,13 @@ in the regression.
 1. CI workflow for S0 (`.github/workflows/s0.yml`). Self-hosted runner on the desktop with labels `vivado` and later `board`.
 2. S1 on xsim: `make xip`, openofdm_rx vectors, then tx_intf, rx_intf, xpu, side_ch bring-up.
 3. S2: chip tests on xsim, plus `chip_loopback_test` and the tx_intf `wifi_iq_ready` delay root cause.
-4. S3 on a licence-free or available board (`zed_fmcs2` / `zcu102_fmcs2`): `s3_build.tcl`, gates, RTL manifest.
+4. S3 on ZC706 (`zc706_fmcs2`): `s3_build.tcl`, gates, RTL manifest.
 5. S4a BD-level smoke with AXI VIP; S4b funcsim of the S2 smoke set.
 6. Get `boards/rfsoc4x2`; repeat S3/S4 for RFSoC (`xczu48dr-ffvg1517-2-e`, RF-DC adapter TB from ARCHITECTURE.md §6).
 7. S5/S6 on the board: regs.json readback, loopback, side_ch capture + Python checkers, then RF tests.
 
+First hardware target: ZC706 + FMCOMMS (decided 2026-11-26).
+
 Open decisions (owner: project lead):
-* which board is the first hardware target if `rfsoc4x2` sources are not available soon;
 * whether the board gets its own runner (Raspberry Pi / small PC next to it) or hangs off the desktop;
 * the RF test equipment available (attenuators, a second board, a reference 802.11n STA or sniffer).
