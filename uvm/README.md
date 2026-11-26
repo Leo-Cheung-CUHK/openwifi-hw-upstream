@@ -2,7 +2,7 @@
 
 Chip-level and block-level UVM verification for [open-sdr/openwifi-hw](https://github.com/open-sdr/openwifi-hw)
 (802.11a/g/n PL: tx_intf, openofdm_tx, rx_intf, openofdm_rx, xpu, side_ch).
-Design and rationale: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
+Design and rationale: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md). Test plan: [docs/test_plan.xlsx](docs/test_plan.xlsx).
 
 ```
 rtl_wrap/            openwifi_core_top.sv (generated from system.bd), axil_decoder.sv
