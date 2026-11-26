@@ -15,7 +15,7 @@ WORK=${WORK:-$HERE/work}
 mkdir -p "$WORK" && cd "$WORK"
 ln -sf "$SRC"/icmem_*.mem .            # ifftmain.v $readmemh's these from the CWD
 if [ ! -x obj_dir/simv ]; then
-  verilator --binary --timing -Wno-fatal -Wno-lint -Wno-style --top-module tb \
+  verilator --binary --timing -Wno-fatal -Wno-lint -Wno-style -Wno-USEBEFOREDECL --top-module tb \
     -I"$SRC" -I"$HERE/../gen_inc" "$HERE/tb.sv" \
     $(ls "$SRC"/*.v | grep -v -e _tb.v -e openofdm_tx.v -e s_axi) -o simv >/dev/null
 fi

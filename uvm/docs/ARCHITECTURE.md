@@ -247,47 +247,36 @@ Compile notes handled by the scripts:
 
 ## 8. Findings while building the environment
 
-0. **HT-SIG is BCC-encoded as two separate 24-bit blocks (bug: HT frames ≥ 1024 bytes).**
-   `dot11_tx.v` line 194 resets the convolutional encoder at `plcp_bit_cnt == 23`, meant for the
-   end of L-SIG; `plcp_bit_cnt` restarts for HT-SIG, so it also fires in the middle of the 48-bit
-   HT-SIG. IEEE 802.11-2020 19.3.9.4.3 encodes HT-SIG1+HT-SIG2 as one block. The encoder state
-   carried into HT-SIG2 is HT-LENGTH[15:10], so the transmitted HT-SIG2 is only correct while the
-   PSDU is < 1024 bytes. Found by `otx_rate_sweep_test` + `check_tx_dumps.py` (all 16 HT
-   1500-byte packets fail at symbol 4, EVM ≈ −8 dB; the boundary is exactly 1023/1024 bytes).
-   The RTL waveform matches the reference to −74 dB if the reference restarts the encoder at
-   bit 24. One-line fix, verified at −72 dB across legacy/HT, LGI/SGI, 14–1500 B:
-   ```verilog
-   assign enc_reset = phy_tx_arest | state1 == S1_WAIT_PKT |
-                      (state1 == S1_L_SIG && plcp_bit_cnt == 23) | (state1 == S1_HT_SIG && plcp_bit_cnt == 47);
-   ```
-   Impact to confirm on air: a standards-compliant receiver decodes HT-SIG with one Viterbi pass
-   and would see a CRC error (frame lost) for long HT frames; openofdm_rx should be checked for the
-   mirror-image behaviour, which would hide the bug in openwifi-to-openwifi tests.
-0b. **First packet after `hw_init` has wrong pilot polarity.** `dot11_tx.v` loads
-   `pilot_scram_state` from `INIT_PILOT_STATE` only on `reset_int` (reset or end of a packet),
-   while the data scrambler reloads every packet. The driver (`openofdm_tx.c hw_init`) pulses
-   `MULTI_RST` and writes `INIT_PILOT_STATE` afterwards, so the first frame uses the seed latched
-   at reset (0). Reproduced in `otx_rate_sweep_test` (packet 1, pilot error ≈ −4 dB EVM on
-   affected symbols); writing the seeds before the reset pulse (`+OTX_SEEDS_FIRST`) fixes it.
-   Fix in the driver (reorder) or the RTL (reload the pilot seed at packet start).
+### openofdm_tx RTL bugs — fixed on this branch (`ip/openofdm_tx/src/dot11_tx.v`)
+
+| # | Bug | Symptom | Fix (commit) |
+|---|---|---|---|
+| A | BCC encoder reset at `plcp_bit_cnt == 23` also fired inside HT-SIG (counter restarts per field) | HT-SIG1/2 encoded as two blocks instead of one (802.11-2020 19.3.9.4.3); HT-SIG2 wrong for HT PSDU ≥ 1024 B; boundary exactly 1023/1024 B | reset at bit 23 only in `S1_L_SIG`, bit 47 only in `S1_HT_SIG` (`c38c16b`) |
+| B | `pilot_scram_state` loaded only on `reset_int`; driver writes `INIT_PILOT_STATE` after `MULTI_RST` | first frame after `hw_init` sent with pilot seed 0 (wrong pilot polarity, ≈ −4 dB EVM on affected symbols) | also load on `phy_tx_start`, like the data scrambler (`72d4d0d`) |
+| C | `phy_tx_done`/`FSM3_reset` raised at `nof_iq2send-2`, last sample expected to leave in the reset cycle | under `tx_hold` (tx_intf FIFO above `TX_HOLD_THRESHOLD`) every packet one sample short | end on the last sample's handshake (`nof_iq2send-1 && valid`), no output in the reset cycle (`c1bb9d2`) |
+| D | FSM3 only advances while `result_iq_ready`; 1-cycle `phy_tx_start` missed if `tx_hold` was high | FSM3 stuck in `S3_WAIT_PKT`, no `phy_tx_done`, FIFO data streamed out indefinitely | latch `phy_tx_start` until FSM3 leaves `S3_WAIT_PKT`; `result_iq_valid = 0` while waiting (`c1bb9d2`) |
+
+How they were found: A from `otx_rate_sweep_test` + `check_tx_dumps.py` (16 HT 1500 B frames failing
+at symbol 4) and the reference re-run with the encoder restarted at bit 24 (−74 dB match);
+B from frame 1 failing only in the UVM run, a cycle-identical PHY interface trace vs the plain
+harness, and the driver's init order; C and D from `otx_backpressure_test`, the
+`a_no_pending_at_done` assertion and `sim/verilator_tx_smoke/backpressure.sh`.
+
+After the fixes: `otx_reg_reset_test`, `otx_rate_sweep_test` (72/72), `otx_random_test` (100/100,
+and 60/60 with 50 % and 90 % random hold), `otx_backpressure_test` (20/20), `backpressure.sh`
+(60/60: FIFO-model and 12 periodic hold patterns × 4 frame types), `make smoke` (20/20) — exact
+sample counts, worst-symbol EVM ≤ −71 dB, no assertion failures.
+
+Still to check: whether `openofdm_rx` decodes HT-SIG as two blocks too (which would have hidden
+bug A in openwifi-to-openwifi links); interoperability of long HT frames with a commercial
+802.11n receiver after the fix.
+
+### Other findings
+
 0c. **Register map: many slv_regs are not writable.** The write cases of several `*_s_axi.v`
    files are commented out (openofdm_tx implements only slv_reg0..2). Found by
-   `otx_reg_reset_test`'s bit-bash; the RAL now models non-writable slots as RO
-   (`is_writable()` per IP, derived from the RTL).
-
-1. **openofdm_tx drops the last I/Q sample under tx_intf back-pressure (likely bug, low impact).**
-   `dot11_tx.v` (S3_DATA) raises `phy_tx_done`/`FSM3_reset` when `sent == nof_iq2send-2`
-   independent of `result_iq_ready`. With a hold pattern that follows tx_iq_intf's rule
-   (`data_count > TX_HOLD_THRESHOLD`, FIFO drained at 20 Msps) the final sample is still waiting
-   at that point and is flushed: every packet came out 1 sample short (2239/2240, 4879/4880, …),
-   with the first N−1 samples bit-identical to the free-running output. Repro:
-   `sim/verilator_tx_smoke/backpressure.sh`. In the FPGA the TX FIFO only reaches the
-   threshold (420) on long packets, so mostly long frames would be affected, and only the
-   final sample of the last symbol. Confirm with the real tx_intf: `chip_tx_test` (DAC burst
-   length) and the `a_no_pending_at_done` assertion in `phy_tx_if` will flag it.
-   Synthetic periodic hold patterns (50 % duty at periods 6–10 clocks) also made dot11_tx stream
-   indefinitely without reaching `phy_tx_done`; whether tx_intf can produce such patterns is
-   unconfirmed.
+   `otx_reg_reset_test`'s bit-bash; the RAL models non-writable slots as RO (`is_writable()`).
+1. *(fixed, see C/D above)*
 2. **Pad bits are scrambled with a frozen scrambler (deviation, harmless).** In `S11_TAIL` the
    scrambler state is held, so pad bits differ from IEEE 802.11-2020 §17.3.5.3 (only the last
    symbol differs; receivers ignore pad bits). `wifi_ref_tx.py --pad standard` shows it, `--pad hold` matches the RTL.
@@ -307,10 +296,12 @@ Compile notes handled by the scripts:
 
 | test | result |
 |---|---|
-| `otx_reg_reset_test` | PASS (after the RAL fix in 0c) |
-| `otx_random_test` (50 frames, ≤ 400 B) | PASS: 50/50 lengths, 50/50 EVM ≈ −73 dB |
-| `otx_rate_sweep_test` (72 frames) | 72/72 lengths OK; EVM 56/72 — the 16 HT 1500 B frames fail (finding 0); packet 1 fails with driver init order (0b) |
-| `otx_backpressure_test` | FAIL as predicted: `a_no_pending_at_done` fires (finding 1) |
+| test | upstream fa6c896 | with fixes A–D |
+|---|---|---|
+| `otx_reg_reset_test` | PASS (after the RAL fix 0c) | PASS |
+| `otx_rate_sweep_test` (72 frames) | lengths 72/72, EVM 55/72 (A: 16 HT 1500 B; B: frame 1) | 72/72 |
+| `otx_random_test` (100 frames, ≤ 400 B) | PASS | 100/100; also 60/60 at 50 % and 90 % random hold |
+| `otx_backpressure_test` | FAIL (`a_no_pending_at_done`, C) | 20/20 |
 
 Testbench bugs fixed while bringing this up: payload randomisation moved to
 `post_randomize()` (no dynamic-array size constraints), 16 µs interframe gap in the BRAM
