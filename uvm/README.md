@@ -2,7 +2,7 @@
 
 Chip-level and block-level UVM verification for [open-sdr/openwifi-hw](https://github.com/open-sdr/openwifi-hw)
 (802.11a/g/n PL: tx_intf, openofdm_tx, rx_intf, openofdm_rx, xpu, side_ch).
-Design and rationale: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md). Test plan: [docs/test_plan.xlsx](docs/test_plan.xlsx).
+Design and rationale: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md). Flow from UVM to FPGA build, netlist sim and on-board emulation: [docs/FLOW.md](docs/FLOW.md). Test plan: [docs/test_plan.xlsx](docs/test_plan.xlsx).
 
 ```
 rtl_wrap/            openwifi_core_top.sv (generated from system.bd), axil_decoder.sv
@@ -31,5 +31,6 @@ make run   TB=chip TEST=chip_ack_test SIM=xsim
 Built and checked against upstream `fa6c896` (the base of this branch), `ip/openofdm_rx` @ `2bb3ad1`.
 After merging newer upstream RTL, re-run `make prep` and commit the regenerated `rtl_wrap/openwifi_core_top.sv`.
 
-Status: all TBs elaborate cleanly (slang + UVM); openofdm_tx RTL verified against the Python
-reference in Verilator. The UVM simulations themselves have not been run yet (see ARCHITECTURE.md §9).
+Status: all TBs elaborate cleanly (slang + UVM). The openofdm_tx UVM regression passes in Verilator
+after fixing RTL bugs A–D. Its captures decode with openofdm's Python receiver. The other TBs need
+xsim with the Xilinx IP models (see ARCHITECTURE.md §9 and FLOW.md).
