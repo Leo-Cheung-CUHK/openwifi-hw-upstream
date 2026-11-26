@@ -1,0 +1,15 @@
+clean HT-SIG coded bits old vs fixed: 2/96 differ at [48, 49]
+clean old: header ok = True
+clean fixed: header ok = True
+
+frame: HT MCS7 sgi=0 len=1504, 300 trials/point
+SNR dB           old         fixed   (HT-SIG frame error rate)
+   0.0        0.8667        0.7567
+   1.0        0.5967        0.4133
+   2.0        0.2767        0.1467
+   3.0        0.0633        0.0167
+   4.0        0.0267        0.0067
+   5.0        0.0000        0.0000
+   6.0        0.0000        0.0000
+   7.0        0.0000        0.0000
+   8.0        0.0000        0.0000

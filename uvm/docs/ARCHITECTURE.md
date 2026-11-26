@@ -267,8 +267,7 @@ and 60/60 with 50 % and 90 % random hold), `otx_backpressure_test` (20/20), `bac
 (60/60: FIFO-model and 12 periodic hold patterns × 4 frame types), `make smoke` (20/20) — exact
 sample counts, worst-symbol EVM ≤ −71 dB, no assertion failures.
 
-Still to check: whether `openofdm_rx` decodes HT-SIG as two blocks too (which would have hidden
-bug A in openwifi-to-openwifi links); interoperability of long HT frames with a commercial
+Still to check: the `openofdm_rx` RTL decoder's view of bug A (the Python receiver corrects it, see §9); interoperability of long HT frames with a commercial
 802.11n receiver after the fix.
 
 ### Other findings
@@ -316,11 +315,24 @@ FCS are compared with the frame the sequence sent.
 | fixed RTL, `otx_rate_sweep_test` (72 frames, legacy 6–54 M, HT MCS0–7, LGI/SGI, 14–1500 B) | 72/72 |
 | upstream fa6c896, frames 0001/0030/0046/0069 | 4/4, including the two HT 1500 B frames that bug A breaks |
 
-The receiver hides bug A. The extra encoder reset changes only a few coded bits at the
-HT-SIG1→HT-SIG2 boundary (and only when the length's high bits are non-zero). On a
-noise-free capture the Viterbi decoder corrects those bits, so the frame decodes. The
-encoding is still non-compliant and costs HT-SIG margin at low SNR. The bit-exact
+The receiver hides bug A. On frame 0069 (HT MCS7, 1504 B PSDU) the extra encoder reset
+changes 2 of the 96 coded HT-SIG bits (the first pair of HT-SIG2). On a noise-free capture
+the Viterbi decoder corrects those 2 bits, so the frame decodes. The bit-exact
 `check_tx_dumps.py` comparison is the check that catches it.
+
+Cost in noise (`scripts/htsig_noise.py`): AWGN on the captured burst, then decode.py's header
+path up to the HT-SIG CRC (hard decisions, as in decode.py). 300 trials per point; both
+captures see the same noise.
+
+| SNR (dB) | 0 | 1 | 2 | 3 | 4 | ≥ 5 |
+|---|---|---|---|---|---|---|
+| HT-SIG frame error rate, upstream RTL | 0.87 | 0.60 | 0.28 | 0.063 | 0.027 | 0 |
+| HT-SIG frame error rate, fixed RTL | 0.76 | 0.41 | 0.15 | 0.017 | 0.007 | 0 |
+
+That is about 0.5 dB of HT-SIG margin lost at 10 % error rate and about 1 dB at 3 %. A failed
+HT-SIG CRC makes openofdm treat the frame as legacy, so the frame is lost. The data part of a
+long HT frame needs more SNR than HT-SIG, even at MCS0, so in practice this rarely limits a link.
+The bug is a standard-compliance defect, not an interoperability blocker.
 `python3 scripts/py_rx_decode.py <dump_dir> [-j N] [-v]` exits 1 on any mismatch.
 
 Earlier static checks:
