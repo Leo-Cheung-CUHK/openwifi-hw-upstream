@@ -29,6 +29,7 @@ module dot11_tx
 );
 
 reg  FSM3_reset;        // Reset after transmiting a whole packet
+reg  phy_tx_start_pend;  // phy_tx_start seen while FSM3 was stalled by ~result_iq_ready
 wire reset_int = phy_tx_arest | FSM3_reset;
 
 // Data collection states
@@ -696,7 +697,7 @@ axi_fifo_bram #(.WIDTH(32), .SIZE(6)) CP_fifo(
 );
 assign CP_fifo_idata  = ifft_o_result_reg;
 assign CP_fifo_ivalid = (S_GI == 1 && ifft_o_sync_cnt > 3) ? (ifft_o_iq_cnt[5:3] == 3'b111 ? ifft_ce_reg : 0) : (ifft_o_iq_cnt[5:4] == 2'b11 ? ifft_ce_reg : 0);
-assign CP_fifo_oready = (state3 == S3_L_SIG || state3 == S3_HT_SIG || state3 == S3_DATA) && fifo_turn == CP_FIFO ? result_iq_ready : 0;
+assign CP_fifo_oready = (state3 == S3_L_SIG || state3 == S3_HT_SIG || state3 == S3_DATA) && fifo_turn == CP_FIFO && !FSM3_reset ? result_iq_ready : 0;
 
 //////////////////////////////////////////////////////////////////////////
 // Packet IFFT output -> Axi stream fifo
@@ -713,7 +714,7 @@ axi_fifo_bram #(.WIDTH(32), .SIZE(8)) pkt_fifo(
 );
 assign pkt_fifo_idata  = ifft_o_result_reg;
 assign pkt_fifo_ivalid = ifft_status == OUTPUT_STARTED ? ifft_ce_reg : 0;
-assign pkt_fifo_oready = (state3 == S3_L_SIG || state3 == S3_HT_SIG || state3 == S3_DATA) && fifo_turn == PKT_FIFO ? result_iq_ready : 0;
+assign pkt_fifo_oready = (state3 == S3_L_SIG || state3 == S3_HT_SIG || state3 == S3_DATA) && fifo_turn == PKT_FIFO && !FSM3_reset ? result_iq_ready : 0;
 
 //////////////////////////////////////////////////////////////////////////
 // Count number of [pkt/CP] IQ samples sent
@@ -744,6 +745,17 @@ end
 //////////////////////////////////////////////////////////////////////////
 // DOT11 TX FINITE STATE MACHINE 3
 //////////////////////////////////////////////////////////////////////////
+// FSM3 only advances while result_iq_ready, but phy_tx_start is a 1-cycle pulse:
+// remember it so a start that coincides with tx_hold is not lost (that left FSM3 in
+// S3_WAIT_PKT while FSM1/2 encoded the packet: no phy_tx_done, endless output).
+always @(posedge clk)
+if (phy_tx_arest)
+    phy_tx_start_pend <= 0;
+else if (phy_tx_start)
+    phy_tx_start_pend <= 1;
+else if (state3 != S3_WAIT_PKT)
+    phy_tx_start_pend <= 0;
+
 always @(posedge clk)
 if (reset_int) begin
     preamble_addr <= 0;
@@ -755,7 +767,7 @@ if (reset_int) begin
 end else if(result_iq_ready == 1) begin
     case(state3)
     S3_WAIT_PKT: begin
-        if(phy_tx_start) begin
+        if(phy_tx_start || phy_tx_start_pend) begin
             preamble_addr <= 0;
             state3 <= S3_L_STF;
         end
@@ -826,7 +838,11 @@ end else if(result_iq_ready == 1) begin
     end
 
     S3_DATA: begin
-        if((pkt_iq_sent + {2'b00, CP_iq_sent}) == nof_iq2send-2) begin
+        // Finish on the cycle the LAST sample is handed over (valid && ready; this
+        // block only runs while result_iq_ready). Finishing at nof_iq2send-2 relied on
+        // the last sample leaving during the FSM3_reset cycle, which tx_hold can stall,
+        // and the reset then flushed it.
+        if((pkt_iq_sent + {2'b00, CP_iq_sent}) == nof_iq2send-1 && result_iq_valid) begin
             phy_tx_done <= 1;
             FSM3_reset <= 1;
         end
@@ -836,6 +852,9 @@ end
 
 assign result_i        = state3 == S3_L_STF ? l_stf[31:16] : (state3 == S3_L_LTF ? l_ltf[31:16] : (state3 == S3_HT_STF ? ht_stf[31:16] : (state3 == S3_HT_LTF ? ht_ltf[31:16] : (fifo_turn == PKT_FIFO ? pkt_fifo_odata[31:16] : CP_fifo_odata[31:16]))));
 assign result_q        = state3 == S3_L_STF ? l_stf[15:0]  : (state3 == S3_L_LTF ? l_ltf[15:0]  : (state3 == S3_HT_STF ? ht_stf[15:0]  : (state3 == S3_HT_LTF ? ht_ltf[15:0]  : (fifo_turn == PKT_FIFO ? pkt_fifo_odata[15:0]  : CP_fifo_odata[15:0]))));
-assign result_iq_valid = state3 == S3_L_STF || state3 == S3_L_LTF || state3 == S3_HT_STF || state3 == S3_HT_LTF ? 1 : (fifo_turn == PKT_FIFO ? pkt_fifo_ovalid : CP_fifo_ovalid);
+// No output in the FSM3_reset cycle (the packet's last sample has already been taken,
+// see S3_DATA) or before the packet has started.
+assign result_iq_valid = (FSM3_reset || state3 == S3_WAIT_PKT) ? 1'b0 :
+                         (state3 == S3_L_STF || state3 == S3_L_LTF || state3 == S3_HT_STF || state3 == S3_HT_LTF ? 1 : (fifo_turn == PKT_FIFO ? pkt_fifo_ovalid : CP_fifo_ovalid));
 
 endmodule
