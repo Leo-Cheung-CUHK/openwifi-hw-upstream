@@ -13,7 +13,7 @@ Two kinds of runner (FLOW.md §1):
 `.github/workflows/s0.yml` runs `uvm/scripts/ci_s0.sh` on every push to `uvm-verification` and on
 pull requests that touch `uvm/`, `ip/` or `boards/`. The first run builds Verilator (~15–20 min);
 later runs restore it and ccache from the Actions cache. The gate itself took about 4 min on a
-2-core Linux box with warm ccache (2026-11-26, all 8 steps PASS).
+2-core Linux box with warm ccache; on GitHub with caches about 5 min (2026-11-26, all 9 steps PASS).
 
 Steps of the gate (each prints PASS/FAIL, the table goes to the job summary):
 

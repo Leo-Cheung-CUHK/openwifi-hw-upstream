@@ -55,7 +55,7 @@ Already in place on `uvm-verification`:
 `scripts/htsig_noise.py`.
 
 CI: `.github/workflows/s0.yml` builds Verilator v5.054 + uvm-core 2020.3.0 once (Actions cache) and
-runs `scripts/ci_s0.sh` (steps prep, lint, smoke, backpressure, otx, golden, pyrx, htsig; see
+runs `scripts/ci_s0.sh` (steps prep, lint, xsimpy, smoke, backpressure, otx, golden, pyrx, htsig; see
 [RUNNER.md](RUNNER.md) §1). This is the only stage that must pass on every push. The same script runs
 locally: `UVM_SRC=<uvm-core>/src scripts/ci_s0.sh [steps…]`.
 
