@@ -32,7 +32,7 @@ hardware-in-the-loop), not a Palladium/Protium-class emulator.
 
 | Stage | Where | Trigger | Run time (estimate) | Gate (all must hold) |
 |---|---|---|---|---|
-| S0 static + Verilator | cloud container / GitHub-hosted CI | every push | ~15 min | lint 7/7; otx regression (reg_reset, rate_sweep 72/72, random, backpressure); smoke 20/20; py_rx_decode 72/72 |
+| S0 static + Verilator | GitHub-hosted CI (`s0.yml`, running) | every push | ~6 min (tools cached; first run ~12 min) | prep no diff; lint 7/7; smoke 20/20; backpressure 60/60; otx regression (reg_reset, rate_sweep 72/72, random, backpressure); captures == golden; py_rx_decode 72/72 when captures change; htsig |
 | S1 block UVM | desktop runner `[vivado]`, xsim | PR, nightly | 1–3 h | all block tests pass, no UVM_ERROR/FATAL, no SVA failure; coverage targets per §3 |
 | S2 chip UVM | `[vivado]`, xsim | PR (smoke set), nightly (full) | 2–6 h | chip_reg/tx/rx/ack/mixed/loopback pass; ACK latency in window |
 | S3 implementation | `[vivado]` | nightly, release | 1–2 h per board | WNS ≥ 0, WHS ≥ 0; no unwaived `report_cdc` critical; DRC/methodology clean or waived; utilisation recorded |
@@ -47,7 +47,7 @@ The board is reached over JTAG (bitstream, ILA) and Ethernet (ssh to the board's
 
 ---
 
-## 2. S0 — static checks and Verilator (exists)
+## 2. S0 — static checks and Verilator (in CI since 2026-11-26)
 
 Already in place on `uvm-verification`:
 `make lint`, `make smoke`, `make run SIM=verilator TB=openofdm_tx TEST=…`,
