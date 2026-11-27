@@ -45,9 +45,11 @@ jobs:
           cache-dependency-path: uvm/scripts/requirements-ci.txt
       - run: pip install -r uvm/scripts/requirements-ci.txt
 
-      - name: Cache Verilator + uvm-core
+      # restore/save split: the tools are saved right after they are built, so a failing
+      # gate does not throw the 20-minute Verilator build away
+      - name: Restore Verilator + uvm-core
         id: tools
-        uses: actions/cache@v4
+        uses: actions/cache/restore@v4
         with:
           path: ${{ env.TOOLS }}
           key: tools-${{ runner.os }}-24.04-verilator-${{ env.VERILATOR_VERSION }}-uvm-${{ env.UVM_CORE_VERSION }}
@@ -62,8 +64,16 @@ jobs:
           make -j"$(nproc)" && make install
           cd .. && rm -rf verilator-src
 
-      - name: Cache ccache (Verilator C++ objects)
-        uses: actions/cache@v4
+      - name: Save Verilator + uvm-core
+        if: steps.tools.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: ${{ env.TOOLS }}
+          key: ${{ steps.tools.outputs.cache-primary-key }}
+
+      - name: Restore ccache (Verilator C++ objects)
+        id: ccache
+        uses: actions/cache/restore@v4
         with:
           path: ~/.cache/ccache
           key: ccache-${{ env.VERILATOR_VERSION }}-${{ hashFiles('uvm/verif/**', 'ip/openofdm_tx/src/**') }}
@@ -79,6 +89,13 @@ jobs:
 
       - name: S0 gate
         run: UVM_SRC="$TOOLS/uvm-core/src" uvm/scripts/ci_s0.sh
+
+      - name: Save ccache
+        if: always() && steps.ccache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: ~/.cache/ccache
+          key: ${{ steps.ccache.outputs.cache-primary-key }}
 
       - name: Logs and captures
         if: always()

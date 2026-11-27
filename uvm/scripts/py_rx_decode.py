@@ -28,7 +28,15 @@ def load_decoder():
     d11.Dot11Packet = lambda fh: None
     wl.dot11 = d11
     sys.modules["wltrace"] = wl; sys.modules["wltrace.dot11"] = d11
-    import numpy as np                               # bundled commpy predates numpy 1.24,
+    # the bundled commpy imports matplotlib at module level, only for plotting trellises;
+    # stub it when absent so decoding needs numpy only
+    try:
+        import matplotlib  # noqa: F401
+    except ImportError:
+        for m in ("matplotlib", "matplotlib.pyplot", "matplotlib.collections", "matplotlib.patches"):
+            sys.modules[m] = types.ModuleType(m)
+        sys.modules["matplotlib.collections"].PatchCollection = None
+    import numpy as np                              # bundled commpy predates numpy 1.24,
     for k, v in (("complex", complex), ("float", float), ("int", int), ("bool", bool)):  # which
         if not hasattr(np, k): setattr(np, k, v)     # removed these aliases
     sys.path.insert(0, SCRIPTS)                      # bundled commpy
