@@ -65,17 +65,35 @@ s_otx() {   # openofdm_tx UVM regression in Verilator; rate_sweep dumps go to $O
   done
   [ $fail = 0 ] && python3 "$OW_UVM/scripts/check_tx_dumps.py" "$OUT/dumps"
 }
-s_golden() {   # fresh rate_sweep captures must be bit-identical to the committed golden set
+same_as_golden() {   # same_as_golden <dir>: IQ captures bit-identical, and every field the golden
+  # frame_NNNN.json has (ht, rate, sgi, mpdu_hex) equal; fields added to the dumps later
+  # (aggr, seed, pilot_seed, ...) are metadata and do not count as a difference
+  python3 - "$GOLDEN" "$1" <<'PY'
+import filecmp, glob, json, os, sys
+g, d = sys.argv[1:3]; bad = []
+for f in sorted(glob.glob(os.path.join(g, "rtl_*.txt"))):
+    o = os.path.join(d, os.path.basename(f))
+    if not os.path.isfile(o) or not filecmp.cmp(f, o, shallow=False): bad.append(os.path.basename(f))
+for f in sorted(glob.glob(os.path.join(g, "frame_*.json"))):
+    o = os.path.join(d, os.path.basename(f))
+    if not os.path.isfile(o): bad.append(os.path.basename(f)); continue
+    a, b = json.load(open(f)), json.load(open(o))
+    if any(b.get(k) != v for k, v in a.items()): bad.append(os.path.basename(f))
+n = len(glob.glob(os.path.join(g, "rtl_*.txt")))
+print(f"golden: {n - len({x[-8:-4] for x in bad})}/{n} frames identical" + (f"; differ: {' '.join(bad[:12])}" if bad else ""))
+sys.exit(1 if bad else 0)
+PY
+}
+s_golden() {   # fresh rate_sweep captures must equal the committed golden set
   [ -d "$OUT/dumps" ] && ls "$OUT/dumps"/rtl_*.txt >/dev/null 2>&1 || { echo "no dumps: run the otx step first"; return 1; }
-  python3 "$OW_UVM/scripts/check_tx_dumps.py" "$GOLDEN" | tail -1 &&
-  diff -rq "$GOLDEN" "$OUT/dumps" && echo "golden: $(ls "$GOLDEN"/rtl_*.txt | wc -l) captures identical"
+  python3 "$OW_UVM/scripts/check_tx_dumps.py" "$GOLDEN" | tail -1 && same_as_golden "$OUT/dumps"
 }
 s_pyrx() {   # openofdm's own Python receiver (pure-Python Viterbi: ~10-20 min for 72 frames)
   # Captures bit-identical to the golden set decode exactly like it (72/72, see
   # docs/results_py_rx_decode_rate_sweep.txt), so the decode only runs when they differ
   # (the golden step then fails too), when there are no fresh dumps, or with PYRX_FORCE=1.
   local d=$OUT/dumps; ls "$d"/rtl_*.txt >/dev/null 2>&1 || d=$GOLDEN
-  if [ "$d" != "$GOLDEN" ] && [ -z "${PYRX_FORCE:-}" ] && diff -rq "$GOLDEN" "$d" >/dev/null; then
+  if [ "$d" != "$GOLDEN" ] && [ -z "${PYRX_FORCE:-}" ] && same_as_golden "$d" >/dev/null; then
     echo "captures identical to golden: decode result unchanged (72/72); PYRX_FORCE=1 to decode anyway"
     return 0
   fi

@@ -26,7 +26,7 @@ Steps of the gate (each prints PASS/FAIL, the table goes to the job summary):
 | `smoke` | Verilator openofdm_tx + `wifi_ref_tx.py` | 20/20 |
 | `backpressure` | FIFO-model and 12 periodic hold patterns × 4 frame types | 60/60 |
 | `otx` | openofdm_tx UVM regression in Verilator (reg_reset, rate_sweep, random, backpressure) + `check_tx_dumps.py` on the rate_sweep dumps | no UVM_ERROR/FATAL, no assertion failure, 72/72 EVM |
-| `golden` | fresh rate_sweep captures vs `vectors/otx_rate_sweep/fixed` | bit-identical |
+| `golden` | fresh rate_sweep captures vs `vectors/otx_rate_sweep/fixed` | IQ (`rtl_*.txt`) bit-identical; every field of the golden `frame_*.json` equal (fields added later, e.g. seeds, are metadata) |
 | `pyrx` | openofdm `decode.py` on the fresh captures — skipped when they are identical to golden (same bits, same decode), `PYRX_FORCE=1` to run it (~20 min) | 72/72 PSDU + FCS |
 | `htsig` | short HT-SIG AWGN run, fixed vs upstream capture of frame 0069 | runs; fixed FER ≤ upstream FER |
 
