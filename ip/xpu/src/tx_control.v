@@ -488,9 +488,10 @@
                 dina<={self_mac_addr,ack_addr[47:32]};
             end else if (bram_addr==4) begin
                 if(rx_ht_aggr_last_flag) begin
-                    dina<={blk_ack_bitmap_lock[31:0], rx_ht_aggr_ssn, ampdu_rx_tid_disable?qos_tid:ampdu_rx_tid, 4'd0, 7'd0, 4'b0010, 1'd0};
+                    // BA Control {TID_INFO[15:12], 7'd0, BA type 0010, ack policy}, SSC {SSN, fragment 0} (802.11-2020 9.3.1.8)
+                    dina<={blk_ack_bitmap_lock[31:0], rx_ht_aggr_ssn, 4'd0, ampdu_rx_tid_disable?qos_tid:ampdu_rx_tid, 7'd0, 4'b0010, 1'd0};
                 end else begin
-                    dina<={blk_ack_bitmap_lock[31:0], blk_ack_req_ssn, ampdu_rx_tid_disable?blk_ack_req_tid:ampdu_rx_tid, 4'd0, 7'd0, 4'b0010, 1'd0};
+                    dina<={blk_ack_bitmap_lock[31:0], blk_ack_req_ssn, 4'd0, ampdu_rx_tid_disable?blk_ack_req_tid:ampdu_rx_tid, 7'd0, 4'b0010, 1'd0};
                 end
             end else if (bram_addr==5) begin
                 dina<={32'h0, blk_ack_bitmap_lock[63:32]};

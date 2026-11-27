@@ -643,7 +643,10 @@ end else begin
     // Reload the pilot scrambler seed at every packet start, like data_scram_state.
     // Loading it only on reset_int meant the first packet after a reset used whatever
     // INIT_PILOT_STATE held during reset (the driver writes it after MULTI_RST).
-    if (phy_tx_start)
+    // Only a start the PHY accepts (FSM1 idle) reloads it: a phy_tx_start pulse during a
+    // packet (tx_intf raises one mid CTS-to-self, see uvm/docs ARCHITECTURE.md finding F)
+    // must not restart the pilot sequence.
+    if (phy_tx_start && state1 == S1_WAIT_PKT)
         pilot_scram_state <= init_pilot_scram_state;
 end
 assign dbps_size = PKT_TYPE == LEGACY ? (ofdm_cnt_FSM2 > 0 ? N_DBPS : 24) : (ofdm_cnt_FSM2 > 2 ? N_DBPS : 24);
@@ -754,7 +757,7 @@ end
 always @(posedge clk)
 if (phy_tx_arest)
     phy_tx_start_pend <= 0;
-else if (phy_tx_start)
+else if (phy_tx_start && state3 == S3_WAIT_PKT)   // a start during a packet is ignored, as before
     phy_tx_start_pend <= 1;
 else if (state3 != S3_WAIT_PKT)
     phy_tx_start_pend <= 0;
