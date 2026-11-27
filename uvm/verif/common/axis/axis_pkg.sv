@@ -125,6 +125,7 @@ package axis_pkg;
     axis_master_driver mdrv; axis_slave_driver sdrv; axis_sequencer sqr; axis_monitor mon;
     function new(string name, uvm_component parent); super.new(name, parent); endfunction
     function void build_phase(uvm_phase phase);
+      super.build_phase(phase);   // uvm_agent::build_phase reads is_active from the config DB
       if (!uvm_config_db#(axis_cfg)::get(this, "", "cfg", cfg)) cfg = axis_cfg::type_id::create("cfg");
       if (!uvm_config_db#(virtual axis_if)::get(this, "", "vif", vif)) `uvm_fatal("NOVIF", get_full_name())
       mon = axis_monitor::type_id::create("mon", this); mon.vif = vif;

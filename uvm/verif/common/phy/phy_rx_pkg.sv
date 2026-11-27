@@ -83,6 +83,10 @@ package phy_rx_pkg;
   class phy_rx_item extends uvm_sequence_item;
     rand wifi_frame frame;
     rand bit corrupt_fcs, header_error, ht_unsupport;
+    // A-MPDU subframes the way openofdm_rx reports them (dot11.v S_MPDU_DELIM): one header
+    // strobe + bytes + fcs strobe per MPDU, no new preamble after the first (cont=1), and
+    // ht_aggr_last only on the last subframe (frame.ht_aggr must be 1)
+    bit aggr_last = 1, cont = 0;
     constraint c_default { soft corrupt_fcs == 0; soft header_error == 0; soft ht_unsupport == 0; }
     `uvm_object_utils(phy_rx_item)
     function new(string name = "phy_rx_item"); super.new(name); frame = wifi_frame::type_id::create("frame"); endfunction
@@ -111,6 +115,14 @@ package phy_rx_pkg;
     task wait_us(real us);
       repeat ($rtoi(us * cfg.clk_per_us)) @(vif.drv_cb);
     endtask
+    // 52 equalizer strobes {Q=k+0x200+sym, I=k} and the end-of-symbol pulse
+    task eq_symbol(int unsigned sym);
+      for (int k = 0; k < 52; k++) begin
+        vif.drv_cb.equalizer <= {16'(k + 16'h200 + sym), 16'(k)}; vif.drv_cb.equalizer_valid <= 1; @(vif.drv_cb);
+      end
+      vif.drv_cb.equalizer_valid <= 0;
+      vif.drv_cb.ofdm_symbol_eq_out_pulse <= 1; @(vif.drv_cb); vif.drv_cb.ofdm_symbol_eq_out_pulse <= 0;
+    endtask
     task pulse_hdr(bit ok);
       vif.drv_cb.pkt_header_valid <= ok; vif.drv_cb.pkt_header_valid_strobe <= 1; @(vif.drv_cb);
       vif.drv_cb.pkt_header_valid_strobe <= 0;
@@ -131,16 +143,23 @@ package phy_rx_pkg;
       int unsigned bytes_per_sym = n_dbps(f.ht, f.rate_hw) / 8;
       real sym_us = (f.ht && f.sgi) ? 3.6 : 4.0;
       f.psdu(p);
+      if (f.ht_aggr) begin                       // MPDU of an A-MPDU: openofdm_rx strips the delimiter
+        bit [31:0] fc; p.delete(); foreach (f.mpdu[k]) p.push_back(f.mpdu[k]);
+        fc = crc32(p, p.size()); for (int k = 0; k < 4; k++) p.push_back(fc[8*k +: 8]);
+      end
       if (it.corrupt_fcs) p[p.size()-1] ^= 8'h5A;
       vif.drv_cb.demod_is_ongoing <= 1;
-      vif.drv_cb.short_preamble_detected <= 1; @(vif.drv_cb); vif.drv_cb.short_preamble_detected <= 0;
-      wait_us(cfg.fast_mode ? 1 : 8);
-      vif.drv_cb.long_preamble_detected <= 1;  @(vif.drv_cb); vif.drv_cb.long_preamble_detected <= 0;
-      wait_us(cfg.fast_mode ? 1 : 12);          // L-LTF rest + L-SIG + decode latency
+      if (!it.cont) begin
+        vif.drv_cb.short_preamble_detected <= 1; @(vif.drv_cb); vif.drv_cb.short_preamble_detected <= 0;
+        wait_us(cfg.fast_mode ? 1 : 8);
+        vif.drv_cb.long_preamble_detected <= 1;  @(vif.drv_cb); vif.drv_cb.long_preamble_detected <= 0;
+        wait_us(cfg.fast_mode ? 1 : 12);          // L-LTF rest + L-SIG + decode latency
+      end
       vif.drv_cb.pkt_rate <= f.ht ? {1'b1, 7'(f.rate_hw)} : {4'b0, legacy_rate_code(f.rate_hw)};
       vif.drv_cb.pkt_len  <= p.size(); vif.drv_cb.ht_sgi <= f.sgi;
-      vif.drv_cb.ht_aggr  <= f.ht_aggr; vif.drv_cb.ht_aggr_last <= f.ht_aggr;
-      if (f.ht && !cfg.fast_mode) wait_us(8);   // HT-SIG
+      vif.drv_cb.ht_aggr  <= f.ht_aggr; vif.drv_cb.ht_aggr_last <= f.ht_aggr && it.aggr_last;
+      if (!it.cont) eq_symbol(0);                 // L-SIG symbol (side_ch starts counting here)
+      if (f.ht && !cfg.fast_mode && !it.cont) wait_us(8);   // HT-SIG
       if (it.header_error || it.ht_unsupport) begin
         vif.drv_cb.ht_unsupport <= it.ht_unsupport;
         pulse_hdr(0); wait_us(2); idle(); return;
@@ -157,23 +176,25 @@ package phy_rx_pkg;
         vif.drv_cb.csi <= {16'(k + 16'h100), 16'(k)}; vif.drv_cb.csi_valid <= 1; @(vif.drv_cb);
       end
       vif.drv_cb.csi_valid <= 0;
-      for (int k = 0; k < 52; k++) begin
-        vif.drv_cb.equalizer <= {16'(k + 16'h200), 16'(k)}; vif.drv_cb.equalizer_valid <= 1; @(vif.drv_cb);
-      end
-      vif.drv_cb.equalizer_valid <= 0;
-      vif.drv_cb.ofdm_symbol_eq_out_pulse <= 1; @(vif.drv_cb); vif.drv_cb.ofdm_symbol_eq_out_pulse <= 0;
-      if (f.ht && !cfg.fast_mode) wait_us(8);   // HT-STF/LTF
+      // one equalizer output symbol per data OFDM symbol, as openofdm_rx (side_ch counts
+      // ofdm_symbol_eq_out_pulse to find the last symbol of the packet)
+      for (int sym = 1; sym <= f.n_sym(); sym++) eq_symbol(sym);
+      if (f.ht && !cfg.fast_mode && !it.cont) wait_us(8);   // HT-STF/LTF
       foreach (p[k]) begin
         if (cfg.fast_mode) repeat (cfg.fast_byte_gap) @(vif.drv_cb);
         else wait_us(sym_us / bytes_per_sym);
-        vif.drv_cb.byte_out <= p[k]; vif.drv_cb.byte_count <= k + 1; vif.drv_cb.byte_out_strobe <= 1;
-        @(vif.drv_cb); vif.drv_cb.byte_out_strobe <= 0;
+        // dot11.v: byte_count is the index of the byte during its strobe and counts up after it
+        vif.drv_cb.byte_out <= p[k]; vif.drv_cb.byte_count <= k; vif.drv_cb.byte_out_strobe <= 1;
+        @(vif.drv_cb); vif.drv_cb.byte_out_strobe <= 0; vif.drv_cb.byte_count <= k + 1;
       end
-      repeat (2) @(vif.drv_cb);
+      // fcs_out_strobe two clocks after the last byte strobe (byte_count == pkt_len in between):
+      // rx_intf's byte_to_word_fcs_sn_insert puts {fcs_ok, rx_pkt_sn} into that last byte's slot
+      @(vif.drv_cb);
       vif.drv_cb.fcs_ok <= !it.corrupt_fcs; vif.drv_cb.fcs_out_strobe <= 1; vif.drv_cb.byte_count <= 0;
       @(vif.drv_cb);
       vif.drv_cb.fcs_out_strobe <= 0;
       repeat (10) @(vif.drv_cb);
+      if (f.ht_aggr && !it.aggr_last) return;   // more subframes follow in the same PPDU
       idle();
     endtask
   endclass
@@ -184,6 +205,7 @@ package phy_rx_pkg;
     phy_rx_monitor mon; phy_rx_driver drv; phy_rx_sequencer sqr;
     function new(string name, uvm_component parent); super.new(name, parent); endfunction
     function void build_phase(uvm_phase phase);
+      super.build_phase(phase);   // uvm_agent::build_phase reads is_active from the config DB
       if (!uvm_config_db#(virtual phy_rx_if)::get(this, "", "vif", vif)) `uvm_fatal("NOVIF", get_full_name())
       if (!uvm_config_db#(phy_rx_cfg)::get(this, "", "cfg", cfg)) cfg = phy_rx_cfg::type_id::create("cfg");
       mon = phy_rx_monitor::type_id::create("mon", this); mon.vif = vif;

@@ -25,6 +25,7 @@ package phy_tx_pkg;
                                        // (16 us SIFS @100 MHz; real frames are never back to back)
     int unsigned  acc_clk_per_sample = 5;
     int unsigned  acc_start_latency  = 20;  // clocks from phy_tx_start to phy_tx_started
+    int unsigned  clk_per_us         = 100; // ACC model: core clock, paces the BRAM reads
     `uvm_object_utils(phy_tx_cfg)
     function new(string name = "phy_tx_cfg"); super.new(name); endfunction
   endclass
@@ -116,27 +117,45 @@ package phy_tx_pkg;
       vif.acc_cb.bram_addr <= 0; vif.acc_cb.result_iq_valid <= 0; vif.acc_cb.phy_tx_started <= 0; vif.acc_cb.phy_tx_done <= 0;
       @(posedge vif.rst_n);
       forever begin
-        wifi_frame f; bit [63:0] w[$]; int unsigned n_words, n_iq, sent;
+        wifi_frame f; bit [63:0] w[$]; int unsigned n_words, n_iq, sent, rd_clk;
         do @(vif.acc_cb); while (!vif.acc_cb.phy_tx_start);
         if (!exp_mb.try_get(f)) `uvm_error("ACC", "phy_tx_start with no expected frame queued")
         if (f != null) begin f.bram_words(w); n_words = w.size(); n_iq = f.tx_samples(); end
         else begin n_words = 2; n_iq = 400; end
         repeat (cfg.acc_start_latency) @(vif.acc_cb);
         vif.acc_cb.phy_tx_started <= 1; @(vif.acc_cb); vif.acc_cb.phy_tx_started <= 0;
-        // read the image word by word (the monitor records what comes back)
-        for (int a = 0; a < n_words; a++) begin vif.acc_cb.bram_addr <= a; @(vif.acc_cb); end
-        repeat (cfg.bram_latency + 1) @(vif.acc_cb);
-        // play out n_iq samples, one per acc_clk_per_sample clocks, stalled by tx_hold
-        sent = 0;
-        while (sent < n_iq) begin
-          shortint i, q;
-          ramp(sent, i, q);
-          vif.acc_cb.result_i <= i; vif.acc_cb.result_q <= q; vif.acc_cb.result_iq_valid <= 1;
-          do @(vif.acc_cb); while (vif.acc_cb.tx_hold);   // valid/ready handshake, ready = ~tx_hold
-          vif.acc_cb.result_iq_valid <= 0;
-          repeat (cfg.acc_clk_per_sample - 1) @(vif.acc_cb);
-          sent++;
-        end
+        rd_clk = 0;
+        // Read the image and play I/Q at the same time, as dot11_tx streams. Reads: SIG words
+        // at once, PSDU word k (k >= 2) once the preamble and the 64*(k-2) bits before it have
+        // gone out at the frame's rate (reading faster would overtake tx_intf's DMA -> BRAM copy,
+        // which a real PHY never does). Play: n_iq samples, one per acc_clk_per_sample clocks,
+        // stalled by tx_hold; phy_tx_done after both (the PHY reads its last word before the
+        // last symbol leaves).
+        fork
+          begin
+            for (int a = 0; a < n_words; a++) begin
+              if (f != null && a >= 2) begin
+                int unsigned t_clks = (f.ht ? 36 : 20) * cfg.clk_per_us + (a - 2) * 64 * 4 * cfg.clk_per_us / n_dbps(f.ht, f.rate_hw);
+                while (rd_clk < t_clks && rd_clk < (n_iq * cfg.acc_clk_per_sample)) begin @(vif.acc_cb); rd_clk++; end
+              end
+              vif.acc_cb.bram_addr <= a; @(vif.acc_cb); rd_clk++;
+            end
+            vif.acc_cb.bram_addr <= 0;               // like dot11_tx between packets (S1_WAIT_PKT)
+            repeat (cfg.bram_latency + 1) @(vif.acc_cb);
+          end
+          begin
+            sent = 0;
+            while (sent < n_iq) begin
+              shortint i, q;
+              ramp(sent, i, q);
+              vif.acc_cb.result_i <= i; vif.acc_cb.result_q <= q; vif.acc_cb.result_iq_valid <= 1;
+              do @(vif.acc_cb); while (vif.acc_cb.tx_hold);   // valid/ready handshake, ready = ~tx_hold
+              vif.acc_cb.result_iq_valid <= 0;
+              repeat (cfg.acc_clk_per_sample - 1) @(vif.acc_cb);
+              sent++;
+            end
+          end
+        join
         vif.acc_cb.phy_tx_done <= 1; @(vif.acc_cb); vif.acc_cb.phy_tx_done <= 0;
       end
     endtask
@@ -184,6 +203,7 @@ package phy_tx_pkg;
     phy_tx_monitor mon; phy_tx_bram_server srv; phy_tx_sequencer sqr; phy_tx_acc_model acc;
     function new(string name, uvm_component parent); super.new(name, parent); endfunction
     function void build_phase(uvm_phase phase);
+      super.build_phase(phase);   // uvm_agent::build_phase reads is_active from the config DB
       if (!uvm_config_db#(virtual phy_tx_if)::get(this, "", "vif", vif)) `uvm_fatal("NOVIF", get_full_name())
       if (!uvm_config_db#(phy_tx_cfg)::get(this, "", "cfg", cfg)) cfg = phy_tx_cfg::type_id::create("cfg");
       mon = phy_tx_monitor::type_id::create("mon", this); mon.vif = vif; mon.cfg = cfg;

@@ -144,6 +144,7 @@ package axil_pkg;
     axil_cfg cfg; axil_driver drv; axil_sequencer sqr; axil_monitor mon;
     function new(string name, uvm_component parent); super.new(name, parent); endfunction
     function void build_phase(uvm_phase phase);
+      super.build_phase(phase);   // uvm_agent::build_phase reads is_active from the config DB
       if (!uvm_config_db#(axil_cfg)::get(this, "", "cfg", cfg)) cfg = axil_cfg::type_id::create("cfg");
       mon = axil_monitor::type_id::create("mon", this);
       if (cfg.is_active == UVM_ACTIVE) begin

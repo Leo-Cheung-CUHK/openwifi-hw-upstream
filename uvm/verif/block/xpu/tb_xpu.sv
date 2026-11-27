@@ -18,8 +18,8 @@ module tb_xpu;
   xpu dut (
     .gpio_status(8'h00),
     .ddc_i(ddc.data[31:16]), .ddc_q(ddc.data[15:0]), .ddc_iq_valid(ddc.valid),
-    .mute_adc_out_to_bb(), .block_rx_dma_to_ps(), .block_rx_dma_to_ps_valid(),
-    .rssi_half_db_lock_by_sig_valid(), .gpio_status_lock_by_sig_valid(),
+    .mute_adc_out_to_bb(), .block_rx_dma_to_ps(txs.block_rx_dma_to_ps), .block_rx_dma_to_ps_valid(txs.block_rx_dma_to_ps_valid),
+    .rssi_half_db_lock_by_sig_valid(txs.rssi_half_db_lock_by_sig_valid), .gpio_status_lock_by_sig_valid(),
     .tsf_runtime_val(), .tsf_pulse_1M(),
     .rssi_half_db(prx.rssi_half_db), .demod_is_ongoing(prx.demod_is_ongoing),
     .pkt_header_valid(prx.pkt_header_valid), .pkt_header_valid_strobe(prx.pkt_header_valid_strobe),
@@ -32,16 +32,16 @@ module tb_xpu;
     .phy_tx_start(txs.phy_tx_start), .phy_tx_started(txs.phy_tx_started), .phy_tx_done(txs.phy_tx_done),
     .tx_status(txs.tx_status), .mac_addr(), .retrans_in_progress(txs.retrans_in_progress),
     .start_retrans(txs.start_retrans), .start_tx_ack(txs.start_tx_ack), .tx_try_complete(txs.tx_try_complete),
-    .tx_iq_fifo_empty(1'b1), .slice_en(txs.slice_en), .backoff_done(txs.backoff_done),
+    .tx_iq_fifo_empty(txs.tx_iq_fifo_empty), .slice_en(txs.slice_en), .backoff_done(txs.backoff_done),
     .tx_bb_is_ongoing(txs.tx_bb_is_ongoing), .tx_rf_is_ongoing(txs.tx_rf_is_ongoing),
     .ack_tx_flag(txs.ack_tx_flag), .wea(txs.wea), .addra(txs.addra), .dina(txs.dina),
-    .tx_pkt_need_ack(1'b0), .tx_pkt_retrans_limit(4'd0), .tx_ht_aggr(1'b0), .douta(64'd0),
+    .tx_pkt_need_ack(txs.tx_pkt_need_ack), .tx_pkt_retrans_limit(txs.tx_pkt_retrans_limit), .tx_ht_aggr(1'b0), .douta(64'd0),
     .cts_toself_bb_is_ongoing(1'b0), .cts_toself_rf_is_ongoing(1'b0), .bram_addr(txs.bram_addr),
-    .band(), .channel(), .quit_retrans(1'b0), .reset_backoff(1'b0),
+    .band(), .channel(), .quit_retrans(txs.quit_retrans), .reset_backoff(txs.reset_backoff),
     .tx_control_state(txs.tx_control_state), .tx_control_state_idle(txs.tx_control_state_idle),
-    .num_slot_random(txs.num_slot_random), .cw(txs.cw), .high_trigger(1'b0), .tx_queue_idx(2'd0),
+    .num_slot_random(txs.num_slot_random), .cw(txs.cw), .high_trigger(txs.high_trigger), .tx_queue_idx(txs.tx_queue_idx),
     .FC_DI(), .FC_DI_valid(), .addr1(), .addr1_valid(), .addr2(), .addr2_valid(), .addr3(), .addr3_valid(),
-    .pkt_for_me(), .ch_idle_final(),
+    .pkt_for_me(txs.pkt_for_me), .ch_idle_final(txs.ch_idle_final),
     .ps_clk(ps_clk), .spi0_sclk(1'b0), .spi0_mosi(1'b0), .spi0_csn(1'b1), .spi_sclk(), .spi_csn(), .spi_mosi(),
     .s00_axi_aclk(clk), .s00_axi_aresetn(rst_n),
     .s00_axi_awaddr(axil.awaddr[7:0]), .s00_axi_awprot(axil.awprot), .s00_axi_awvalid(axil.awvalid), .s00_axi_awready(axil.awready),
@@ -56,5 +56,16 @@ module tb_xpu;
     uvm_config_db#(virtual iq_if)::set(null, "uvm_test_top.env.ddc*", "vif", ddc);
     uvm_config_db#(virtual xpu_tx_side_if)::set(null, "uvm_test_top.env", "txside", txs);
     run_test("xpu_ack_test");
+  end
+  // +XPU_TRACE: csma_ca state and channel-idle terms, for debugging the TB
+  initial if ($test$plusargs("XPU_TRACE")) forever begin
+    @(dut.csma_ca_i.backoff_state or dut.csma_ca_i.ch_idle_final or dut.tx_rf_is_ongoing or dut.tx_bb_is_ongoing
+      or txs.phy_tx_done or txs.phy_tx_started or txs.tx_iq_fifo_empty or dut.tx_on_detection_i.search_indication or txs.tx_try_complete or txs.high_trigger);
+    #0 $display("%t XPU_TRACE bo_state %0d ch_idle_final %b ch_idle %b nav %0d rssi %0d th %0d demod %b tx_rf %b tx_bb %b ack_cts %b wait %0d",
+      $time, dut.csma_ca_i.backoff_state, dut.csma_ca_i.ch_idle_final, dut.ch_idle, dut.csma_ca_i.nav_for_mac,
+      dut.cca_i.rssi_half_db, dut.cca_i.rssi_half_db_th, dut.cca_i.demod_is_ongoing, dut.tx_rf_is_ongoing, dut.tx_bb_is_ongoing,
+      dut.cca_i.ack_cts_is_ongoing, dut.csma_ca_i.backoff_wait_timer);
+    if ($test$plusargs("XPU_TRACE")) $display("%t XPU_TRACE2 started %b done %b fifo_empty %b search %b try_complete %b high_trigger %b", $time,
+      txs.phy_tx_started, txs.phy_tx_done, txs.tx_iq_fifo_empty, dut.tx_on_detection_i.search_indication, txs.tx_try_complete, txs.high_trigger);
   end
 endmodule

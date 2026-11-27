@@ -12,15 +12,17 @@ module tb_side_ch;
 
   axil_if         axil (clk, rst_n);
   axis_if         dma  (clk, rst_n);
+  initial dma.tlast_waive = 1;   // finding H: side_ch_m_axis TLAST follows TREADY (same template as rx_intf)
+  final if (dma.n_tlast_unstable) $display("NOTE finding H: side_ch TLAST changed during %0d stalls (waived)", dma.n_tlast_unstable);
   phy_rx_if       prx  (clk, rst_n);
-  side_ch_side_if side (clk, rst_n);
+  side_ch_side_if side (clk, rst_n, prx.pkt_header_valid_strobe, prx.byte_out_strobe, prx.byte_out);
   assign prx.rssi_half_db = -11'sd100;
 
   side_ch dut (
     .gpio_status(8'h00), .rssi_half_db(prx.rssi_half_db), .tsf_runtime_val(side.tsf),
     .openofdm_tx_iq0(32'd0), .openofdm_tx_iq1(32'd0), .openofdm_tx_iq_valid(1'b0),
     .tx_intf_iq0(32'd0), .tx_intf_iq1(32'd0), .tx_intf_iq_valid(1'b0),
-    .sample0_in(32'd0), .sample1_in(32'd0), .sample_in_strobe(1'b0),
+    .sample0_in(side.sample0), .sample1_in(32'd0), .sample_in_strobe(side.sample_strobe),
     .demod_is_ongoing(prx.demod_is_ongoing), .ofdm_symbol_eq_out_pulse(prx.ofdm_symbol_eq_out_pulse),
     .long_preamble_detected(prx.long_preamble_detected), .short_preamble_detected(prx.short_preamble_detected),
     .ht_unsupport(prx.ht_unsupport), .pkt_rate(prx.pkt_rate), .pkt_len(prx.pkt_len),
@@ -28,8 +30,8 @@ module tb_side_ch;
     .equalizer(prx.equalizer), .equalizer_valid(prx.equalizer_valid),
     .pkt_header_valid(prx.pkt_header_valid), .pkt_header_valid_strobe(prx.pkt_header_valid_strobe),
     .phy_type({1'b0, prx.pkt_rate[7]}),
-    .tx_control_state(4'd0), .FC_DI(32'd0), .FC_DI_valid(1'b0),
-    .addr1(48'd0), .addr1_valid(1'b0), .addr2(48'd0), .addr2_valid(1'b0), .addr3(48'd0), .addr3_valid(1'b0),
+    .tx_control_state(4'd0), .FC_DI(side.fc_di), .FC_DI_valid(side.fc_di_valid),
+    .addr1(side.addr1), .addr1_valid(side.addr1_valid), .addr2(side.addr2), .addr2_valid(side.addr2_valid), .addr3(48'd0), .addr3_valid(1'b0),
     .pkt_for_me(1'b1), .fcs_in_strobe(prx.fcs_out_strobe), .fcs_ok(prx.fcs_ok),
     .block_rx_dma_to_ps(1'b0), .block_rx_dma_to_ps_valid(1'b0), .ch_idle_final(1'b1),
     .phy_tx_start(1'b0), .tx_pkt_need_ack(1'b0), .phy_tx_started(1'b0), .phy_tx_done(1'b0),

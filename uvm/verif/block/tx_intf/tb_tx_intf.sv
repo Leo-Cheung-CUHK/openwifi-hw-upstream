@@ -17,6 +17,9 @@ module tb_tx_intf;
   phy_tx_if acc  (clk, rst_n);
   iq_if     dac  (dac_clk, !dac_rst);
   irq_if    irq  (clk, rst_n);
+  xpu_stub_ctl_if xctl ();
+  logic tx_iq_fifo_empty;
+  logic cts_bb;
 
   // xpu side
   logic [3:0] slice_en, cw, band; logic [7:0] channel; logic [9:0] addra, num_slot_random;
@@ -26,6 +29,7 @@ module tb_tx_intf;
 
   xpu_tx_stub #(.CLK_PER_US(`NUM_CLK_PER_US)) u_xpu (
     .clk(clk), .rst_n(rst_n), .phy_tx_start(acc.phy_tx_start), .phy_tx_done(acc.phy_tx_done),
+    .slice_en_cfg(xctl.slice_en), .mac_addr_cfg(xctl.mac_addr), .cts_toself_bb_is_ongoing(cts_bb), .tx_iq_fifo_empty(tx_iq_fifo_empty),
     .tx_pkt_need_ack(tx_pkt_need_ack), .slice_en(slice_en), .backoff_done(backoff_done),
     .tx_bb_is_ongoing(tx_bb_is_ongoing), .ack_tx_flag(ack_tx_flag), .wea(wea),
     .retrans_in_progress(retrans_in_progress), .start_retrans(start_retrans), .start_tx_ack(start_tx_ack),
@@ -34,11 +38,13 @@ module tb_tx_intf;
     .band(band), .channel(channel), .tx_status(tx_status), .mac_addr(mac_addr), .tsf_pulse_1M(tsf_pulse_1M));
 
   assign dac.valid = 1'b1;     // dac_valid is tied 1 in dac_intf.v; monitor samples every dac_clk
+  wire [63:0] dac_data_w;      // DUT output -> interface through a continuous assign
+  assign dac.data = dac_data_w;
 
   tx_intf dut (
     .dac_rst(dac_rst), .dac_clk(dac_clk),
     .dma_valid(1'b0), .dma_data(64'd0), .dma_ready(),
-    .dac_valid(), .dac_data(dac.data), .dac_ready(1'b1),
+    .dac_valid(), .dac_data(dac_data_w), .dac_ready(1'b1),
     .iq0_for_check(), .iq1_for_check(), .iq_valid_for_check(), .tx_pkt_iq_to_dac_ongoing(),
     .fcs_in_strobe(1'b0),
     .phy_tx_start(acc.phy_tx_start), .tx_hold(acc.tx_hold), .bram_addr(acc.bram_addr),
@@ -46,16 +52,16 @@ module tb_tx_intf;
     .data_to_acc(acc.bram_din), .bram_addr_to_xpu(),
     .tx_start_from_acc(acc.phy_tx_started), .tx_end_from_acc(acc.phy_tx_done),
     .tx_itrpt(irq.tx_itrpt), .tx_itrpt_led(), .tx_end_led(),
-    .tx_status(tx_status), .mac_addr(mac_addr), .douta(), .tx_iq_fifo_empty(),
+    .tx_status(tx_status), .mac_addr(mac_addr), .douta(), .tx_iq_fifo_empty(tx_iq_fifo_empty),
     .slice_en(slice_en), .backoff_done(backoff_done), .tx_bb_is_ongoing(tx_bb_is_ongoing),
     .ack_tx_flag(ack_tx_flag), .wea_from_xpu(wea), .addra_from_xpu(addra), .dina_from_xpu(dina),
     .tx_pkt_need_ack(tx_pkt_need_ack), .tx_pkt_retrans_limit(), .use_ht_aggr(),
     .tx_try_complete(tx_try_complete), .num_slot_random(num_slot_random), .cw(cw),
     .retrans_in_progress(retrans_in_progress), .start_retrans(start_retrans), .start_tx_ack(start_tx_ack),
     .tx_control_state_idle(tx_control_state_idle),
-    .cts_toself_bb_is_ongoing(), .cts_toself_rf_is_ongoing(),
+    .cts_toself_bb_is_ongoing(cts_bb), .cts_toself_rf_is_ongoing(),
     .tsf_pulse_1M(tsf_pulse_1M), .band(band), .channel(channel),
-    .quit_retrans(), .reset_backoff(), .high_trigger(), .tx_queue_idx_to_xpu(),
+    .quit_retrans(), .reset_backoff(), .high_trigger(), .tx_queue_idx_to_xpu(xctl.tx_queue_idx),
     .s00_axi_aclk(clk), .s00_axi_aresetn(rst_n),
     .s00_axi_awaddr(axil.awaddr[6:0]), .s00_axi_awprot(axil.awprot), .s00_axi_awvalid(axil.awvalid), .s00_axi_awready(axil.awready),
     .s00_axi_wdata(axil.wdata), .s00_axi_wstrb(axil.wstrb), .s00_axi_wvalid(axil.wvalid), .s00_axi_wready(axil.wready),
@@ -73,6 +79,18 @@ module tb_tx_intf;
     uvm_config_db#(virtual phy_tx_if)::set(null, "uvm_test_top.env.acc*", "vif", acc);
     uvm_config_db#(virtual iq_if)::set(null, "uvm_test_top.env.dac*", "vif", dac);
     uvm_config_db#(virtual irq_if)::set(null, "uvm_test_top.env", "irq", irq);
+    uvm_config_db#(virtual xpu_stub_ctl_if)::set(null, "uvm_test_top.env", "xctl", xctl);
     run_test("txi_basic_test");
+  end
+  // +TXI_TRACE: DAC idle/active edges and the PHY handshake, for debugging the TB
+  bit dac_nz, dac_nz_q;
+  always @(posedge dac_clk) begin
+    dac_nz = (dac_data_w != 0); 
+    if ($test$plusargs("TXI_TRACE") && dac_nz != dac_nz_q) $display("%t TXI_TRACE dac %s data %h", $time, dac_nz ? "active" : "idle", dac_data_w);
+    dac_nz_q = dac_nz;
+  end
+  initial if ($test$plusargs("TXI_TRACE")) forever begin
+    @(posedge clk iff (acc.phy_tx_start || acc.phy_tx_done || tx_try_complete));
+    $display("%t TXI_TRACE start %b done %b try_complete %b tx_bb %b", $time, acc.phy_tx_start, acc.phy_tx_done, tx_try_complete, tx_bb_is_ongoing);
   end
 endmodule

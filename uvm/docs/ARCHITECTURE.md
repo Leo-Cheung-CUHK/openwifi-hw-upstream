@@ -112,7 +112,8 @@ TBs (adc_intf, fifo_sample_delay, mv_avg). No self-checking, no UVM, no chip-lev
                                  +  dumps frame_N.json + rtl_N.txt -> scripts/check_tx_dumps.py (EVM per symbol)
 ```
 Tests: `otx_reg_reset_test`, `otx_rate_sweep_test` (all 8 legacy rates + 8 MCS × LGI/SGI × 14/100/1500 B),
-`otx_random_test`, `otx_backpressure_test` (FIFO-model hold, see §8 finding 1).
+`otx_random_test`, `otx_backpressure_test` (FIFO-model hold, see §8 finding 1),
+`otx_scrambler_seed_test`, `otx_ampdu_test` (HT_AGGR; delimiters/pad as the driver), `otx_reset_midpacket_test`.
 Coverage: `wifi_frame_cov` (format × rate × length bins, SGI, symbol-boundary padding).
 
 ### 4.2 openofdm_rx
@@ -123,7 +124,9 @@ Coverage: `wifi_frame_cov` (format × rate × length bins, SGI, symbol-boundary 
 One stimulus *window* per vector: exactly one decoded packet expected, header rate/len,
 PSDU bytes (generated vectors), `fcs_ok`; spurious decodes are errors. Expectation source:
 `.exp` sidecar (generated) or file-name convention (`ag_<N>M_len<L>`, `ht_mcs<M>_gi<G>_aggr<A>_len<L>`,
-`dot11a_<N>mbps`). Tests: `orx_vectors_test`, `orx_impair_test`, `orx_reg_reset_test`.
+`dot11a_<N>mbps`). Tests: `orx_vectors_test`, `orx_impair_test`, `orx_reg_reset_test`,
+`orx_snr_sweep_test` (required-SNR table), `orx_len_limits_test` (`gen_rx_vectors.py --craft`),
+`orx_b2b_test`. Expectation kinds: one packet, reject (`.rej`), multi, silent.
 Lists: `make rxlists` → `build/lists/rx_{simulated,conducted,generated}.list`.
 
 ### 4.3 tx_intf
@@ -131,31 +134,47 @@ TB plays DMA (AXIS master), openofdm_tx (`phy_tx_agent` ACC_MODEL), xpu (`xpu_tx
 grants the medium, pulses `tx_try_complete`), DAC (iq monitor, 40 Msps zero-stuffed, decim 2).
 Checks: BRAM image == `wifi_frame::bram_words()` (header build, parity, CRC, legacy-length spoof,
 PSDU copy), DAC samples == ACC ramp × BB_GAIN >>> 7 **exactly** (nothing dropped/duplicated
-across the CDC), `tx_itrpt` + `PKT_INFO1` (bd index, queue). Tests: `txi_basic_test`,
-`txi_stress_test` (low TX_HOLD_THRESHOLD).
+across the CDC), `tx_itrpt` + `PKT_INFO1` (bd index, queue). The xpu stub ends a transmission when tx_intf's
+IQ FIFO has drained after `phy_tx_done` (up to `TX_HOLD_THRESHOLD` = 420 samples, 21 µs), as
+xpu `tx_on_detection` does. Tests: `txi_basic_test`, `txi_stress_test` (low TX_HOLD_THRESHOLD),
+`txi_queues_test` (priority 0>1>2>3, `slice_en` gating), `txi_ampdu_test` (CHECK_AGGR:
+buf_size, max_tx_bytes, floating packet), `txi_cts_toself_test`, `txi_arbitrary_iq_test`,
+`txi_ant_test` (ant_flag / CDD lanes).
 
 ### 4.4 rx_intf
 TB plays ADC (iq agent @40 MHz, each sample twice), openofdm_rx (`phy_rx_agent` ACTIVE),
-xpu sideband (`rx_side_if`: filter verdict pulsed after the header strobe, RSSI/AGC lock, TSF),
-DMA S2MM (random back-pressure). Checks: ADC→`sample0` path per BB_GAIN shift; DMA packet ==
+xpu sideband (`rx_side_if`: filter verdict after the 24th PSDU byte or at FCS, as
+`pkt_filter_ctl` decides once the addresses are parsed; RSSI/AGC lock at SIGNAL; TSF),
+DMA S2MM (random back-pressure; S2MM IOC interrupt emulated after each TLAST, it re-arms
+`rx_pkt_intr`), tx_intf I/Q for the `IQ_SRC_SEL` loopback. Checks: ADC→`sample0` path per BB_GAIN shift; DMA packet ==
 `rx_desc` (len, rate_idx, sgi, pkt-exist byte, gpio, rssi, tsf ≥ start, PSDU, fcs bit);
-filtered packets never reach DMA; `rx_pkt_intr` count. Tests: `rxi_adc_path_test`, `rxi_frames_test`.
+filtered packets never reach DMA; `rx_pkt_intr` count. Tests: `rxi_adc_path_test`, `rxi_frames_test`,
+`rxi_dma_stall_test` (stall < / > TLAST timeout, M_AXIS reset held), `rxi_loopback_src_test`,
+`rxi_mute_ant_test`. The scoreboard accepts `may_drop` frames (lost or cut by a recovery) and
+skips any run of them to the next matching packet.
 
 ### 4.5 xpu
 TB plays openofdm_rx (real PHY timing, not fast mode — MAC timers depend on it), DDC feed for
-RSSI/CCA, and tx_intf+openofdm_tx (`xpu_phy_responder`: answers `start_tx_ack`, walks
-`bram_addr`, records the ACK image xpu serves through `dina` while `ack_tx_flag`).
+RSSI/CCA, and tx_intf+openofdm_tx (`xpu_phy_model`: answers `start_tx_ack`, walks
+`bram_addr`, records the response image xpu serves through `dina` while `ack_tx_flag`; plays host
+frames with `send()` incl. retransmissions; drives `tx_iq_fifo_empty` low while samples play,
+since xpu derives `tx_bb/rf_is_ongoing` from that FIFO's edges). `LBT_TH` is set 20 half-dB above
+the TB's DDC noise floor (the TB RSSI scale has no RF gain chain).
 Checks: ACK due iff unicast-to-me data/mgmt with good FCS; ACK image == expected 10-byte ACK
 (RA = TA of the received frame, 6 Mbps, len 14); response latency window; TSF load/rollover/rate.
-Tests: `xpu_ack_test`, `xpu_tsf_test`. To add next: CSMA/backoff (slot/DIFS/CW from
-`CSMA_CFG`), retransmission on missing ACK (`tx_pkt_need_ack`, `RECV_ACK_COUNT_TOP`),
-CTS-to-RTS, filter-flag matrix, LBT threshold vs DDC power.
+Tests: `xpu_ack_test`, `xpu_tsf_test`, `xpu_csma_test` (DIFS−advance on idle medium; DIFS + slots
+after busy; CW per queue), `xpu_retrans_test`, `xpu_filter_test` (flag matrix vs a reference
+model), `xpu_cts_test`, `xpu_blkack_test`, `xpu_rssi_test` (+12/+24 half-dB for ×2/×4, LBT),
+`xpu_slice_test`. MAC addresses in all TBs are unicast (first octet on air even).
 
 ### 4.6 side_ch
 TB plays openofdm_rx (CSI/equaliser strobes with a known pattern), xpu taps, DMA S2MM.
 Checks the record framing used by `side_info_display.py` (2 + 56 + num_eq·52 words, TSF
-monotonic) and `M_AXIS_DATA_COUNT`. Value-level CSI check is left switched off until the
-kept-bin map is taken from `side_ch_control.v`. Test: `sch_csi_test`.
+monotonic) and `M_AXIS_DATA_COUNT`. side_ch does not push records: as the driver's
+`get_side_info()`, the TB reads `M_AXIS_DATA_COUNT`, rounds down to whole records and writes
+`NUM_DMA_SYMBOL`, whose write edge starts the transfer (`pull()`). Value-level CSI check is left
+switched off until the kept-bin map is taken from `side_ch_control.v`. Tests: `sch_csi_test`,
+`sch_match_test` (CONFIG[14:12] FC/addr1/addr2), `sch_iq_capture_test`, `sch_num_eq_test`.
 
 ---
 
@@ -197,6 +216,14 @@ kept-bin map is taken from `side_ch_control.v`. Test: `sch_csi_test`.
   | `chip_rx_test` | peer frame → ADC → rx_intf → openofdm_rx → rx_intf → DMA; descriptor + PSDU |
   | `chip_ack_test` | unicast to DUT: frame delivered to host **and** ACK on air to the peer, RA correct, DAC-start minus ADC-end within the SIFS window |
   | `chip_mixed_test` | TX and RX traffic concurrently (CSMA/CCA, mute during own TX, two DMA directions) |
+  | `chip_retrans_test` | peer ACKs the 3rd / 2nd / no attempt: retries on air with the Retry bit, `PKT_INFO1` num_retrans |
+  | `chip_tx_ack_test` | ACK on the first attempt, num_retrans 0 |
+  | `chip_filter_test` | FILTER_FLAG matrix × to-me / broadcast / other / beacon: host delivery, ACK on air for to-me |
+  | `chip_loopback_test` | `IQ_SRC_SEL` = 0x100: own transmission decoded and delivered on RX DMA (board S6a mode) |
+  | `chip_sidech_test` | CSI records pulled like the driver; record TSF == RX descriptor TSF |
+  | `chip_rx_impair_test` | gain 0.1–1.0 × CFO ±20 kHz × ADC noise |
+  | `chip_stress_test` | random queues, RX DMA ready 30 %, interrupt counts |
+  | `make regress-clk` | P1 chip tests at each `CLK_VARIANTS` core clock (separate `VARIANT` build dirs) |
 * **ACK timing.** `SEND_ACK_WAIT_TOP` is calibrated in the driver for the *real* RF latency
   (AD9361 / RF-DC pipeline, `BB_RF_DELAY`). The TB has zero RF latency, so the measured gap is
   SIFS minus those latencies. `chip_cfg.sifs_{min,max}_us` (default 10–22 µs) is a sanity
@@ -241,7 +268,12 @@ Compile notes handled by the scripts:
 * `common_defs.v` macros must precede the files using them → compile per IP as one unit (`-mfcu`).
 * `ifftmain.v` `$readmemh`s `icmem_*.mem` from the CWD → the Makefile links them into the run dir.
 * `clock_speed.v`, `*_pre_def.v`, git-rev headers are generated by the FPGA flow → sim copies in `sim/gen_inc`.
-* XPM sources and `glbl.v` come from `$XILINX_VIVADO`.
+* XPM sources and `glbl.v` come from `$XILINX_VIVADO`. Without Vivado, `sim/xpm_models/xpm_models.sv`
+  supplies behavioural models of the XPM configurations this RTL uses (fwft sync FIFO with the real
+  primitive's depth+1 capacity, std async FIFO, common-clock TDP RAM, CDC); each stops with `$fatal`
+  on any other configuration. tx_intf, rx_intf, xpu and side_ch then run in Verilator:
+  `scripts/run_block_vlt.sh <tb> [tests]`.
+* `gen_inc/clock_speed.v` only defines `NUM_CLK_PER_US` if the command line has not.
 
 ---
 
@@ -300,6 +332,27 @@ Still to check: the `openofdm_rx` RTL decoder's view of bug A (the Python receiv
    channel (same checks). Also seen: xelab can print `ERROR:` and still exit 0, so `xsim.py`
    judges a step by the log, not only the exit code.
 
+### Findings from the block TBs in Verilator (2026-11-27)
+
+| # | IP | Finding | Status |
+|---|---|---|---|
+| E | tx_intf | CTS-to-self: `WAIT_SIFS` goes to `DO_TX` with `wr_counter=0`, skipping `PREP_PHY_HDR`. The data frame after the CTS has no L-SIG/HT-SIG and a stale length (2 words copied); its leftover DMA words corrupt later frames. | open — `txi_cts_toself_test` fails |
+| F | tx_intf | `addra_internal <= send_cts_toself_wait_count`: 10-bit address, count runs to 20·NUM_CLK_PER_US = 2000, so it wraps and raises an extra `phy_tx_start` every 1024 clocks during the CTS wait. dot11_tx now ignores starts outside `S1/S3_WAIT_PKT` (fix B/D hardened). | open (tx_intf); openofdm_tx hardened |
+| G | xpu | BlockAck image: TID written into the SSC fragment-number bits, BA Control TID_INFO always 0 (802.11-2020 §9.3.1.8). Wrong for every TID ≠ 0. | **fixed** in `ip/xpu/src/tx_control.v`; `xpu_blkack_test` fails upstream, passes fixed |
+| H | rx_intf, side_ch | `axis_tlast = (read_pointer == N) && tx_en` with `tx_en = TREADY && TVALID`: TLAST follows TREADY, i.e. changes while the beat is stalled (AXI4-Stream violation). The Xilinx DMA samples only on the handshake, so it works on boards. | waived in the TBs (`axis_if.tlast_waive`), counted in every run |
+| I | rx_intf | TLAST-timeout recovery raises the fake TLAST for one clock and resets M_AXIS in the same cycle (TVALID withdrawn). When the DMA is stalled — the case the recovery exists for — no handshake happens, the S2MM transfer is not terminated and the next packet lands in the abandoned buffer. | open; TB waives `a_hold` only while rx_intf's M_AXIS reset is active, counts it |
+| J | rx_intf | `MULTI_RST[4]` (M_AXIS reset, held between `openwifi_stop` and `openwifi_start`) does not reset `rx_intf_pl_to_m_axis` (`MULTI_RST[8]`), and hw_init's 0x14 pulse does not either. A frame received during the hold parks the FSM in `WAIT_DMA_TLAST`: RX to the host is blacked out until the TLAST timeout (7 ms with the driver default). | open; `rxi_dma_stall_test` checks the blackout ends at the timeout |
+| — | openofdm_rx | Suspected: 1-symbol HT frames have spoofed L-SIG LENGTH 12 < MIN_LEN_TH 14 and may be dropped by the watchdog. | to confirm on xsim (`orx_len_limits_test`) |
+| — | tx_intf | `buf_size` is a 6-bit field (64 → 0); `buf_size = 0` produces empty aggregates. Driver writes `ampdu_density << 24`, RTL reads [24:22] (unused). | observations |
+
+Testbench defects found and fixed on the way (they would have hidden or faked results):
+all five agents skipped `super.build_phase` (passive agents were active); `rx_intf_init_seq`
+stopped before `START_TRANS_TO_PS` (max length 0 → every frame dropped); `phy_rx` driver gave
+`byte_count` 1-based (rx_intf packing and xpu `phy_rx_parse` are 0-based) and the FCS strobe a
+clock late; `66:55:44:33:22:11` (and `02:…:07`, `02:…:99`, the BSSIDs) had the I/G bit set,
+i.e. were group addresses; xpu TB tied `tx_iq_fifo_empty` to 1 (xpu never saw its own TX);
+rx_intf/chip TBs tied the DMA `s2mm_intr` to 0; side_ch tests assumed records are pushed.
+
 ---
 
 ## 9. What has been checked, what has not
@@ -313,11 +366,22 @@ Still to check: the `openofdm_rx` RTL decoder's view of bug A (the Python receiv
 | `otx_random_test` (100 frames, ≤ 400 B) | PASS | 100/100; also 60/60 at 50 % and 90 % random hold |
 | `otx_backpressure_test` | FAIL (`a_no_pending_at_done`, C) | 20/20 |
 
+**Block TBs in Verilator with the XPM models** (`scripts/run_block_vlt.sh`, seed 1, 2026-11-27):
+
+| TB | tests | result |
+|---|---|---|
+| openofdm_tx | 7 + golden/smoke/backpressure/py_rx_decode | all pass |
+| tx_intf | 7 | 6 pass; `txi_cts_toself_test` fails on E/F |
+| rx_intf | 5 | 5 pass (H/I/J reported as notes) |
+| xpu | 9 | 9 pass with fix G (blkack fails on upstream) |
+| side_ch | 4 | 4 pass |
+| openofdm_rx, chip | 8 + 13 | lint only — need the Xilinx IP models (xsim) |
+
 Testbench bugs fixed while bringing this up: payload randomisation moved to
 `post_randomize()` (no dynamic-array size constraints), 16 µs interframe gap in the BRAM
 server, burst end-of-packet timeout raised to 1000 clocks, BRAM image read by the PHY now
-checked against `bram_words()`. Other TBs need the XPM sources (`$XILINX_VIVADO`) or the
-Xilinx IP models and have not been simulated yet.
+checked against `bram_words()`. openofdm_rx and chip need the Xilinx IP models and have not been
+simulated yet; the other block TBs run with the XPM models (table above).
 
 **Independent receiver (`scripts/py_rx_decode.py`, openofdm `decode.py`):** the TX IQ
 captures are decoded by openofdm's own Python receiver (Viterbi, soft decisions); PSDU and
@@ -359,9 +423,9 @@ Checked here:
   offset and the K_MOD/pilot scaling were corrected because of it).
 * HT-SIG CRC model == RTL vector; gen_rx_vectors / check_tx_dumps run end-to-end.
 
-Not yet run (no simulator licence / Vivado in this environment):
-* Any UVM simulation; expect a first round of debug (timeouts, plusarg defaults, the xpu
-  responder timing, side_ch start mode).
+Not yet run (no Vivado in this environment):
+* openofdm_rx and chip UVM simulation (xsim + Xilinx IP models); block TBs again on xsim with the
+  real XPM library.
 * `gen_xilinx_ip_sim.tcl` (needs Vivado 2022.2 + Viterbi licence).
 
 Next steps, in order: (1) `make xip` + `openofdm_rx` vectors on xsim; (2) openofdm_tx/tx_intf/rx_intf

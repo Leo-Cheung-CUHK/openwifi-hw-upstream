@@ -27,7 +27,8 @@ VERB           ?= UVM_MEDIUM
 NUM_CLK_PER_US ?= 100
 PLUSARGS       ?=
 BUILD          := $(OW_UVM)/build
-RUN             = $(BUILD)/run/$(TB)_$(TEST)_$(SEED)
+VARIANT        ?=
+RUN             = $(BUILD)/run$(VARIANT)/$(TB)_$(TEST)_$(SEED)
 XILINX_VIVADO  ?= $(shell v=$$(which vivado 2>/dev/null) && dirname $$(dirname $$v))
 # slang lint only: path to uvm-core/src
 UVM_SRC        ?= 
@@ -51,33 +52,40 @@ TESTS_openofdm_rx := orx_reg_reset_test orx_vectors_test orx_impair_test \
 TOP_tx_intf := tb_tx_intf
 IPS_tx_intf := tx_intf
 XIP_tx_intf := 0
-SRC_tx_intf      := $(V)/block/tx_intf/xpu_tx_stub.sv $(V)/block/tx_intf/tx_intf_tb_pkg.sv $(V)/block/tx_intf/tb_tx_intf.sv
-TESTS_tx_intf    := txi_basic_test txi_stress_test
+SRC_tx_intf      := $(V)/block/tx_intf/xpu_stub_ctl_if.sv $(V)/block/tx_intf/xpu_tx_stub.sv $(V)/block/tx_intf/tx_intf_tb_pkg.sv $(V)/block/tx_intf/tb_tx_intf.sv
+TESTS_tx_intf    := txi_basic_test txi_stress_test txi_queues_test txi_ampdu_test txi_cts_toself_test \
+                    txi_arbitrary_iq_test txi_ant_test
 
 TOP_rx_intf := tb_rx_intf
 IPS_rx_intf := rx_intf
 XIP_rx_intf := 0
 SRC_rx_intf      := $(V)/block/rx_intf/rx_side_if.sv $(V)/block/rx_intf/rx_intf_tb_pkg.sv $(V)/block/rx_intf/tb_rx_intf.sv
-TESTS_rx_intf    := rxi_adc_path_test rxi_frames_test
+TESTS_rx_intf    := rxi_adc_path_test rxi_frames_test rxi_dma_stall_test rxi_loopback_src_test rxi_mute_ant_test
 
 TOP_xpu := tb_xpu
 IPS_xpu := xpu
 XIP_xpu := 0
 SRC_xpu          := $(V)/block/xpu/xpu_tx_side_if.sv $(V)/block/xpu/xpu_tb_pkg.sv $(V)/block/xpu/tb_xpu.sv
-TESTS_xpu        := xpu_tsf_test xpu_ack_test
+TESTS_xpu        := xpu_tsf_test xpu_ack_test xpu_csma_test xpu_retrans_test xpu_filter_test xpu_cts_test \
+                    xpu_blkack_test xpu_rssi_test xpu_slice_test
 
 TOP_side_ch := tb_side_ch
 IPS_side_ch := side_ch
 XIP_side_ch := 0
 SRC_side_ch      := $(V)/block/side_ch/side_ch_side_if.sv $(V)/block/side_ch/side_ch_tb_pkg.sv $(V)/block/side_ch/tb_side_ch.sv
-TESTS_side_ch    := sch_csi_test
+TESTS_side_ch    := sch_csi_test sch_match_test sch_iq_capture_test sch_num_eq_test
 
 TOP_chip := tb_chip
 IPS_chip := openofdm_rx openofdm_tx rx_intf tx_intf xpu side_ch
 XIP_chip := 1
 SRC_chip         := $(OW_UVM)/rtl_wrap/axil_decoder.sv $(OW_UVM)/rtl_wrap/openwifi_core_top.sv \
                     $(V)/chip/dac_to_peer_rx.sv $(V)/chip/chip_tb_pkg.sv $(V)/chip/tb_chip.sv
-TESTS_chip       := chip_reg_test chip_tx_test chip_rx_test chip_ack_test chip_mixed_test
+TESTS_chip       := chip_reg_test chip_tx_test chip_rx_test chip_ack_test chip_mixed_test \
+                    chip_retrans_test chip_tx_ack_test chip_filter_test chip_loopback_test chip_sidech_test \
+                    chip_rx_impair_test chip_stress_test
+# chip P1 tests, also run per clock variant by regress-clk (CHP-14)
+TESTS_chip_p1    := chip_reg_test chip_tx_test chip_rx_test chip_ack_test chip_mixed_test \
+                    chip_retrans_test chip_tx_ack_test chip_loopback_test
 
 # per-test default plusargs (used by run/regress here and by xsim.py); PLUSARGS adds to them
 ARGS_orx_vectors_test     := +RX_VEC_LIST=$(BUILD)/lists/rx_simulated.list
@@ -95,13 +103,18 @@ XPM_SRC = $(XILINX_VIVADO)/data/ip/xpm/xpm_cdc/hdl/xpm_cdc.sv \
           $(XILINX_VIVADO)/data/ip/xpm/xpm_fifo/hdl/xpm_fifo.sv \
           $(XILINX_VIVADO)/data/ip/xpm/xpm_memory/hdl/xpm_memory.sv
 GLBL    = $(XILINX_VIVADO)/data/verilog/src/glbl.v
+# no Vivado (e.g. Verilator in CI): behavioural models of the XPM primitives the RTL uses
+ifeq ($(strip $(XILINX_VIVADO)),)
+XPM_SRC = $(OW_UVM)/sim/xpm_models/xpm_models.sv
+endif
 INCS    = +incdir+$(OW_UVM)/sim/gen_inc +incdir+$(OW_HW)/ip
-DEFS    = +define+NUM_CLK_PER_US=$(NUM_CLK_PER_US)
+EXTRA_DEFS ?=
+DEFS    = +define+NUM_CLK_PER_US=$(NUM_CLK_PER_US) $(EXTRA_DEFS)
 COMMON  = $(shell sed -e '/^\/\//d' -e 's#$${OW_UVM}#$(OW_UVM)#' $(V)/common/common.f)
 RTL_F   = $(foreach i,$(IPS),-f $(BUILD)/rtl/$(i).f)
 XIP_DIR = $(BUILD)/xip
 
-.PHONY: prep xip compile run regress lint smoke rxlists clean
+.PHONY: prep xip compile run regress regress-clk lint smoke rxlists clean
 
 # vector lists for orx_vectors_test (+RX_VEC_LIST=...)
 rxlists:
@@ -179,7 +192,7 @@ VLT_WNO_UBD = $(shell $(VERILATOR) -Wno-USEBEFOREDECL --version >/dev/null 2>&1 
 # One model per TB, shared by all its tests and seeds: Verilator skips regeneration when its
 # inputs are unchanged (--skip-identical, the default), so only the first test of a TB compiles.
 # The UVM C++ needs ~2.5 GB per compiler job: lower VLT_JOBS on small machines.
-VLT_DIR  = $(BUILD)/vlt/$(TB)
+VLT_DIR  = $(BUILD)/vlt$(VARIANT)/$(TB)
 VLT_JOBS ?= $(shell nproc)
 ifeq ($(SIM),verilator)
 compile:
@@ -200,6 +213,16 @@ regress: rxlists
 	    $(MAKE) run TB=$$tb TEST=$$t SEED=$(SEED) > /dev/null 2>&1; \
 	    log=$(BUILD)/run/$${tb}_$${t}_$(SEED)/sim.log; \
 	    if grep -q "UVM_ERROR :    0" $$log && grep -q "UVM_FATAL :    0" $$log; then echo "PASS $$tb $$t"; else echo "FAIL $$tb $$t ($$log)"; fi; \
+	  done; done
+# CHP-14: chip P1 tests at every core clock the boards build with (zc706/adrv9361: 100, 200;
+# zcu102: 240). VARIANT keeps each clock's models and runs in their own directories.
+CLK_VARIANTS ?= 100 200
+regress-clk:
+	@for c in $(CLK_VARIANTS); do \
+	  for t in $(TESTS_chip_p1); do \
+	    $(MAKE) run TB=chip TEST=$$t SEED=$(SEED) NUM_CLK_PER_US=$$c VARIANT=_clk$$c > /dev/null 2>&1; \
+	    log=$(BUILD)/run_clk$$c/chip_$${t}_$(SEED)/sim.log; \
+	    if grep -q "UVM_ERROR :    0" $$log && grep -q "UVM_FATAL :    0" $$log; then echo "PASS clk$$c $$t"; else echo "FAIL clk$$c $$t ($$log)"; fi; \
 	  done; done
 print-tests:
 	@echo $(TESTS_$(TB))

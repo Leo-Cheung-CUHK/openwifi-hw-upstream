@@ -21,7 +21,20 @@ module tb_chip;
   axil_if axil   (clk, rst_n);
   axis_if dma_tx (clk, rst_n);   // axi_dma_0 MM2S -> tx_intf
   axis_if dma_rx (clk, rst_n);   // rx_intf -> axi_dma_1 S2MM
+  // AXI DMA S2MM IOC interrupt: rises after each TLAST handshake on the RX stream and stays
+  // high a few clocks (the driver's ISR clears it); rx_intf delays rx_pkt_intr from its edge
+  logic s2mm_intr = 0; int unsigned s2mm_hold = 0;
+  always @(posedge clk) begin
+    if (dma_rx.tvalid && dma_rx.tready && dma_rx.tlast) s2mm_hold <= 20;
+    else if (s2mm_hold) s2mm_hold <= s2mm_hold - 1;
+    s2mm_intr <= (s2mm_hold != 0);
+  end
+  assign dma_rx.hold_waive = !dut.rx_intf_0.rx_intf_m_axis_i.M_AXIS_ARESETN;   // finding I
+  final if (dma_rx.n_valid_withdrawn) $display("NOTE finding I: rx_intf withdrew TVALID under a stalled DMA %0d time(s) (TLAST timeout / M_AXIS reset)", dma_rx.n_valid_withdrawn);
+  initial dma_rx.tlast_waive = 1;   // finding H: rx_intf_m_axis TLAST follows TREADY
+  final if (dma_rx.n_tlast_unstable) $display("NOTE finding H: rx_intf TLAST changed during %0d stalls (waived)", dma_rx.n_tlast_unstable);
   axis_if dma_sch(clk, rst_n);   // side_ch -> axi_dma_0 S2MM
+  initial dma_sch.tlast_waive = 1;   // finding H (side_ch_m_axis)
   irq_if  irq    (clk, rst_n);
   // ---------------- RF side
   iq_if   adc    (adc_clk, !adc_rst);
@@ -35,7 +48,7 @@ module tb_chip;
     .dac_data(dac.data), .dac_valid(), .dac_ready(1'b1),
     .gpio_status(8'h00),
     .spi0_csn(1'b1), .spi0_mosi(1'b0), .spi0_sclk(1'b0),
-    .rx_pkt_intr(irq.rx_pkt_intr), .tx_itrpt(irq.tx_itrpt), .dma1_s2mm_intr(1'b0),
+    .rx_pkt_intr(irq.rx_pkt_intr), .tx_itrpt(irq.tx_itrpt), .dma1_s2mm_intr(s2mm_intr),
     // board debug outputs (LEDs, PMOD, AD9361 SPI) differ per BD and are left open
     .s_axis_tx_tready(dma_tx.tready), .s_axis_tx_tdata(dma_tx.tdata), .s_axis_tx_tstrb(dma_tx.tstrb),
     .s_axis_tx_tlast(dma_tx.tlast), .s_axis_tx_tvalid(dma_tx.tvalid),

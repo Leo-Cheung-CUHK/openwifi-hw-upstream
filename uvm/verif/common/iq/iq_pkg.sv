@@ -166,6 +166,7 @@ package iq_pkg;
     iq_driver drv; iq_sequencer sqr; iq_monitor mon;
     function new(string name, uvm_component parent); super.new(name, parent); endfunction
     function void build_phase(uvm_phase phase);
+      super.build_phase(phase);   // uvm_agent::build_phase reads is_active from the config DB
       if (!uvm_config_db#(iq_cfg)::get(this, "", "cfg", cfg)) cfg = iq_cfg::type_id::create("cfg");
       if (!uvm_config_db#(virtual iq_if)::get(this, "", "vif", vif)) `uvm_fatal("NOVIF", get_full_name())
       mon = iq_monitor::type_id::create("mon", this); mon.vif = vif; mon.cfg = cfg;

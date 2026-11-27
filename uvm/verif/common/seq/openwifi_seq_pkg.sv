@@ -113,6 +113,15 @@ package openwifi_seq_pkg;
       wr(rb, "S2MM_INTR_DELAY_COUNT", 30*10);
       wr(rb, "IQ_CTRL", 0);
       wr(rb, "START_TRANS_TO_PS_MODE", 32'h1_0025);
+      wr(rb, "START_TRANS_TO_PS", 1700 << 16);     // OPENWIFI_MAX_SIGNAL_LEN_TH: 0 would drop every frame
+      wr(rb, "START_TRANS_TO_PS_SRC_SEL", 0);
+      wr(rb, "NUM_DMA_SYMBOL_TO_PL", 8);
+      wr(rb, "NUM_DMA_SYMBOL_TO_PS", 8);
+      wr(rb, "CFG_DATA_TO_ANT", 1 << 8);
+      wr(rb, "BB_GAIN", 4);
+      wr(rb, "MULTI_RST", 32'h14);
+      wr(rb, "MULTI_RST", 0);
+      rx_m_axis_rst(rb, 1);
     endtask
   endclass
 
@@ -150,7 +159,7 @@ package openwifi_seq_pkg;
   class openwifi_start_seq extends ow_reg_seq_base;
     `uvm_object_utils(openwifi_start_seq)
     openwifi_regmodel rm;
-    bit [47:0] mac_addr = 48'h66_55_44_33_22_11;  // byte0 = 0x11 (little-endian as in sdr.c)
+    bit [47:0] mac_addr = 48'h66_55_44_33_22_12;  // byte0 = 0x12 (first on air; I/G bit 0 = unicast)
     bit [3:0]  band = 4;                         // BAND_5_8GHZ
     int unsigned channel_mhz = 5220;             // actual_rx_lo
     bit        use_short_slot = 1;
