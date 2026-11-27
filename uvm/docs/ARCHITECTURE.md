@@ -286,6 +286,12 @@ Still to check: the `openofdm_rx` RTL decoder's view of bug A (the Python receiv
 5. `ht_sig_crc_calc.v` reads `data[34]` (out of range) on its final iteration; harmless (result
    latched from the previous state) but produces X in 4-state simulation.
 6. `adc_intf.v` uses blocking assignments in the `default:` branch of a clocked `case`.
+7. **`dot11_tx.v` uses 15 signals before their declaration** (the three AXI-stream FIFO bundles,
+   `punc_info`, `enc_pos`, `fifo_turn`; 9 use sites). Vivado synthesis and Verilator accept it,
+   xvlog in SV mode stops with VRFC 10-3380 — found by the first xsim run on the Windows desktop
+   (2026-11-26). Fixed by moving the declarations to the top of the module, no logic change: the
+   72 rate-sweep captures stay bit-identical to the golden set. `scripts/rtl_strict.py` (S0 step
+   `rtlstrict`) now checks all six IPs for it.
 
 ---
 

@@ -32,7 +32,7 @@ hardware-in-the-loop), not a Palladium/Protium-class emulator.
 
 | Stage | Where | Trigger | Run time (estimate) | Gate (all must hold) |
 |---|---|---|---|---|
-| S0 static + Verilator | GitHub-hosted CI (`s0.yml`, running) | every push | ~6 min (tools cached; first run ~12 min) | prep no diff; lint 7/7; smoke 20/20; backpressure 60/60; otx regression (reg_reset, rate_sweep 72/72, random, backpressure); captures == golden; py_rx_decode 72/72 when captures change; htsig |
+| S0 static + Verilator | GitHub-hosted CI (`s0.yml`, running) | every push | ~6 min (tools cached; first run ~12 min) | prep no diff; lint 7/7; RTL strict 6/6; smoke 20/20; backpressure 60/60; otx regression (reg_reset, rate_sweep 72/72, random, backpressure); captures == golden; py_rx_decode 72/72 when captures change; htsig |
 | S1 block UVM | desktop runner `[vivado]`, xsim | PR, nightly | 1–3 h | all block tests pass, no UVM_ERROR/FATAL, no SVA failure; coverage targets per §3 |
 | S2 chip UVM | `[vivado]`, xsim | PR (smoke set), nightly (full) | 2–6 h | chip_reg/tx/rx/ack/mixed/loopback pass; ACK latency in window |
 | S3 implementation | `[vivado]` | nightly, release | 1–2 h per board | WNS ≥ 0, WHS ≥ 0; no unwaived `report_cdc` critical; DRC/methodology clean or waived; utilisation recorded |
@@ -55,7 +55,7 @@ Already in place on `uvm-verification`:
 `scripts/htsig_noise.py`.
 
 CI: `.github/workflows/s0.yml` builds Verilator v5.054 + uvm-core 2020.3.0 once (Actions cache) and
-runs `scripts/ci_s0.sh` (steps prep, lint, xsimpy, smoke, backpressure, otx, golden, pyrx, htsig; see
+runs `scripts/ci_s0.sh` (steps prep, lint, rtlstrict, xsimpy, smoke, backpressure, otx, golden, pyrx, htsig; see
 [RUNNER.md](RUNNER.md) §1). This is the only stage that must pass on every push. The same script runs
 locally: `UVM_SRC=<uvm-core>/src scripts/ci_s0.sh [steps…]`.
 

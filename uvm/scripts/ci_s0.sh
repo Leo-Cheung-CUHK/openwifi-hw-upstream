@@ -7,7 +7,7 @@
 #
 # Needs: python3 + numpy + pyslang, Verilator >= 5.05x with z3 on PATH (for the Verilator steps),
 #        uvm-core 2020.3.0 (UVM_SRC), ip/openofdm_rx submodule checked out.
-# Steps: prep lint xsimpy smoke backpressure otx golden pyrx htsig
+# Steps: prep lint rtlstrict xsimpy smoke backpressure otx golden pyrx htsig
 # Exit status is non-zero if any step fails; a summary table is printed at the end and,
 # under GitHub Actions, written to the job summary.
 set -uo pipefail
@@ -17,7 +17,7 @@ OW_HW=${OW_HW:-$(cd "$OW_UVM/.." && pwd)}
 UVM_SRC=${UVM_SRC:?set UVM_SRC to uvm-core/src}
 OUT=${CI_OUT:-$OW_UVM/build/ci}
 JOBS=${JOBS:-$(nproc)}
-STEPS=${*:-prep lint xsimpy smoke backpressure otx golden pyrx htsig}
+STEPS=${*:-prep lint rtlstrict xsimpy smoke backpressure otx golden pyrx htsig}
 OTX_TESTS="otx_reg_reset_test otx_rate_sweep_test otx_random_test otx_backpressure_test"
 GOLDEN=$OW_UVM/vectors/otx_rate_sweep/fixed
 export OW_HW
@@ -42,6 +42,7 @@ s_lint() {
   make -C "$OW_UVM/sim" -s lint OW_HW="$OW_HW" UVM_SRC="$UVM_SRC" | tee /dev/stderr | grep -c "RESULT PASS" |
     { read n; echo "lint: $n/7 PASS"; [ "$n" = 7 ]; }
 }
+s_rtlstrict() { python3 "$OW_UVM/scripts/rtl_strict.py" --rtl "$OW_UVM/build/rtl"; }   # no use-before-declare (xvlog)
 s_xsimpy() { python3 "$OW_UVM/scripts/test_xsim_py.py"; }   # Windows/Linux xsim driver, fake Vivado
 s_smoke() { make -C "$OW_UVM/sim" -s smoke OW_HW="$OW_HW"; }
 s_backpressure() {
@@ -91,7 +92,7 @@ s_htsig() {   # short HT-SIG noise run: must run, fixed RTL must not be worse th
 
 for s in $STEPS; do
   case $s in
-    prep|lint|xsimpy|smoke|backpressure|otx|golden|pyrx|htsig) run_step "$s" "s_$s" ;;
+    prep|lint|rtlstrict|xsimpy|smoke|backpressure|otx|golden|pyrx|htsig) run_step "$s" "s_$s" ;;
     *) echo "unknown step $s"; exit 2 ;;
   esac
 done

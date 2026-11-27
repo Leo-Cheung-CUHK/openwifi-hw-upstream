@@ -13,7 +13,7 @@ Two kinds of runner (FLOW.md §1):
 `.github/workflows/s0.yml` runs `uvm/scripts/ci_s0.sh` on every push to `uvm-verification` and on
 pull requests that touch `uvm/`, `ip/` or `boards/`. The first run builds Verilator (~15–20 min);
 later runs restore it and ccache from the Actions cache. The gate itself took about 4 min on a
-2-core Linux box with warm ccache; on GitHub with caches about 5 min (2026-11-26, all 9 steps PASS).
+2-core Linux box with warm ccache; on GitHub with caches about 5 min (2026-11-26, all steps PASS).
 
 Steps of the gate (each prints PASS/FAIL, the table goes to the job summary):
 
@@ -21,6 +21,7 @@ Steps of the gate (each prints PASS/FAIL, the table goes to the job summary):
 |---|---|---|
 | `prep` | `make prep` regenerates `rtl_wrap/openwifi_core_top.sv` from `system.bd` | no diff to the committed file |
 | `lint` | slang elaboration of all 7 TBs | 7/7 |
+| `rtlstrict` | slang on the prepared RTL of all 6 IPs without the use-before-declare allowance (xvlog rejects it, Vivado synthesis does not) | 6/6 |
 | `xsimpy` | `sim/xsim.py` (the Windows xsim flow) against a fake Vivado: file lists equal the Makefile's for all 7 TBs, Xilinx IP grouping, compile-once, recompile on change | 0 failures |
 | `smoke` | Verilator openofdm_tx + `wifi_ref_tx.py` | 20/20 |
 | `backpressure` | FIFO-model and 12 periodic hold patterns × 4 frame types | 60/60 |

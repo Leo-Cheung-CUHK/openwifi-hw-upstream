@@ -32,6 +32,24 @@ reg  FSM3_reset;        // Reset after transmiting a whole packet
 reg  phy_tx_start_pend;  // phy_tx_start seen while FSM3 was stalled by ~result_iq_ready
 wire reset_int = phy_tx_arest | FSM3_reset;
 
+// Declared here, ahead of their first use further down (Verilog requires declaration before use;
+// Vivado synthesis accepts the late form, xvlog in SV mode and other simulators do not).
+wire [1:0]  bits_enc_fifo_idata,  bits_enc_fifo_odata;
+wire        bits_enc_fifo_ivalid, bits_enc_fifo_ovalid;
+wire        bits_enc_fifo_iready, bits_enc_fifo_oready;
+wire [15:0] bits_enc_fifo_space;
+wire [1:0]  punc_info;
+reg        enc_pos;
+wire [31:0] CP_fifo_idata,  CP_fifo_odata;
+wire        CP_fifo_ivalid, CP_fifo_ovalid;
+wire        CP_fifo_iready, CP_fifo_oready;
+wire [15:0] CP_fifo_space;
+wire [31:0] pkt_fifo_idata,  pkt_fifo_odata;
+wire        pkt_fifo_ivalid, pkt_fifo_ovalid;
+wire        pkt_fifo_iready, pkt_fifo_oready;
+wire [15:0] pkt_fifo_space;
+reg        fifo_turn;
+
 // Data collection states
 reg [1:0] state1;
 localparam S1_WAIT_PKT = 0;
@@ -384,10 +402,6 @@ end
 //////////////////////////////////////////////////////////////////////////
 // Store scrambed bits into axi stream fifo
 //////////////////////////////////////////////////////////////////////////
-wire [1:0]  bits_enc_fifo_idata,  bits_enc_fifo_odata;
-wire        bits_enc_fifo_ivalid, bits_enc_fifo_ovalid;
-wire        bits_enc_fifo_iready, bits_enc_fifo_oready;
-wire [15:0] bits_enc_fifo_space;
 axi_fifo_bram #(.WIDTH(2), .SIZE(10)) bits_enc_fifo(
     .clk(clk), .reset(reset_int), .clear(reset_int),
     .i_tdata(bits_enc_fifo_idata), .i_tvalid(bits_enc_fifo_ivalid), .i_tready(bits_enc_fifo_iready),
@@ -404,7 +418,6 @@ assign bits_enc_fifo_oready = (state2 == S2_PUNC_INTERLV && bits_enc_fifo_ovalid
 // Puncturing and interleaving index look up table
 reg  [14:0] ofdm_cnt_FSM2;
 reg  [8:0]  dbps_cnt_FSM2;
-wire [1:0]  punc_info;
 wire [17:0] interlv_addrs;
 punc_interlv_lut punc_interlv_lut(
     .rate(PKT_TYPE == LEGACY ? (ofdm_cnt_FSM2 > 0 ? RATE : 5'b01011) : (ofdm_cnt_FSM2 > 2 ? RATE : 5'b01011)),
@@ -415,7 +428,6 @@ punc_interlv_lut punc_interlv_lut(
 
 // This is a RAM module for holding convolutionally encoded, punctured and interleaved bits.
 // Bit puncturing is implicitly carried out, such that punc_interlv_lut provides write address along with puncturing ON/OFF signal
-reg        enc_pos;
 wire       bits_ram_en;
 wire       punc_bit;
 wire [8:0] bits_ram_waddr;
@@ -685,10 +697,6 @@ end
 //////////////////////////////////////////////////////////////////////////
 // Cyclic Prefix IFFT output -> Axi stream fifo
 //////////////////////////////////////////////////////////////////////////
-wire [31:0] CP_fifo_idata,  CP_fifo_odata;
-wire        CP_fifo_ivalid, CP_fifo_ovalid;
-wire        CP_fifo_iready, CP_fifo_oready;
-wire [15:0] CP_fifo_space;
 axi_fifo_bram #(.WIDTH(32), .SIZE(6)) CP_fifo(
     .clk(clk), .reset(reset_int), .clear(reset_int),
     .i_tdata(CP_fifo_idata), .i_tvalid(CP_fifo_ivalid), .i_tready(CP_fifo_iready),
@@ -702,10 +710,6 @@ assign CP_fifo_oready = (state3 == S3_L_SIG || state3 == S3_HT_SIG || state3 == 
 //////////////////////////////////////////////////////////////////////////
 // Packet IFFT output -> Axi stream fifo
 //////////////////////////////////////////////////////////////////////////
-wire [31:0] pkt_fifo_idata,  pkt_fifo_odata;
-wire        pkt_fifo_ivalid, pkt_fifo_ovalid;
-wire        pkt_fifo_iready, pkt_fifo_oready;
-wire [15:0] pkt_fifo_space;
 axi_fifo_bram #(.WIDTH(32), .SIZE(8)) pkt_fifo(
     .clk(clk), .reset(reset_int), .clear(reset_int),
     .i_tdata(pkt_fifo_idata), .i_tvalid(pkt_fifo_ivalid), .i_tready(pkt_fifo_iready),
@@ -719,7 +723,6 @@ assign pkt_fifo_oready = (state3 == S3_L_SIG || state3 == S3_HT_SIG || state3 ==
 //////////////////////////////////////////////////////////////////////////
 // Count number of [pkt/CP] IQ samples sent
 //////////////////////////////////////////////////////////////////////////
-reg        fifo_turn;
 reg [20:0] pkt_iq_sent;
 reg [18:0] CP_iq_sent;
 always @(posedge clk)
