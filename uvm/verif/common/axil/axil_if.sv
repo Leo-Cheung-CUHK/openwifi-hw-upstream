@@ -20,14 +20,14 @@ interface axil_if (input logic clk, input logic rst_n);
   endclocking
 
   // ---- protocol assertions (AXI4-Lite subset)
-  property p_stable(valid, ready, sig);
-    @(posedge clk) disable iff (!rst_n) (valid && !ready) |=> $stable(sig) && valid;
-  endproperty
-  a_aw_stable: assert property (p_stable(awvalid, awready, awaddr));
-  a_w_stable:  assert property (p_stable(wvalid,  wready,  wdata));
-  a_ar_stable: assert property (p_stable(arvalid, arready, araddr));
-  a_b_stable:  assert property (p_stable(bvalid,  bready,  bresp));
-  a_r_stable:  assert property (p_stable(rvalid,  rready,  rdata));
+  // Written out per channel on purpose: a parameterised named property
+  // (property p_stable(valid, ready, sig)) crashes xelab in Vivado 2022.2 xsim
+  // (EXCEPTION_ACCESS_VIOLATION in "Compiling module work.axil_if"; with typed formals it hangs).
+  a_aw_stable: assert property (@(posedge clk) disable iff (!rst_n) (awvalid && !awready) |=> $stable(awaddr) && awvalid);
+  a_w_stable:  assert property (@(posedge clk) disable iff (!rst_n) (wvalid  && !wready)  |=> $stable(wdata)  && wvalid);
+  a_ar_stable: assert property (@(posedge clk) disable iff (!rst_n) (arvalid && !arready) |=> $stable(araddr) && arvalid);
+  a_b_stable:  assert property (@(posedge clk) disable iff (!rst_n) (bvalid  && !bready)  |=> $stable(bresp)  && bvalid);
+  a_r_stable:  assert property (@(posedge clk) disable iff (!rst_n) (rvalid  && !rready)  |=> $stable(rdata)  && rvalid);
   a_no_x_valid: assert property (@(posedge clk) disable iff (!rst_n)
                   !$isunknown({awvalid, wvalid, bvalid, arvalid, rvalid}));
 endinterface

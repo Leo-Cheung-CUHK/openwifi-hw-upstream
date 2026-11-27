@@ -292,6 +292,13 @@ Still to check: the `openofdm_rx` RTL decoder's view of bug A (the Python receiv
    (2026-11-26). Fixed by moving the declarations to the top of the module, no logic change: the
    72 rate-sweep captures stay bit-identical to the golden set. `scripts/rtl_strict.py` (S0 step
    `rtlstrict`) now checks all six IPs for it.
+8. **xsim 2022.2 cannot elaborate a parameterised named property.** `axil_if`'s
+   `property p_stable(valid, ready, sig)` crashed xelab (EXCEPTION_ACCESS_VIOLATION in
+   "Compiling module work.axil_if"); with typed formals it hung. Isolated on the Windows desktop
+   with standalone variants: clocking blocks, inline `assert property` and the other three
+   interfaces' assertions are fine. The five AXI-Lite stability checks are now written out per
+   channel (same checks). Also seen: xelab can print `ERROR:` and still exit 0, so `xsim.py`
+   judges a step by the log, not only the exit code.
 
 ---
 
