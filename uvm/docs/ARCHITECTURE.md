@@ -428,6 +428,7 @@ Not yet run (no Vivado in this environment):
   real XPM library.
 * `gen_xilinx_ip_sim.tcl` (needs Vivado 2022.2 + Viterbi licence).
 
-Next steps, in order: (1) `make xip` + `openofdm_rx` vectors on xsim; (2) openofdm_tx/tx_intf/rx_intf
-block regressions; (3) chip_tx/rx/ack; (4) xpu CSMA/retransmission tests and coverage closure
-(rate × length × GI, CSMA states, filter flags, queue × priority); (5) RFSoC adapter TB.
+Next steps, in order: (1) `make xip` + `openofdm_rx` ORX-01..08 on xsim (incl. the 1-symbol HT
+suspicion); (2) the block set again on xsim with the real XPM library; (3) chip tests CHP-01..14;
+(4) decide RTL fixes for E/F (tx_intf CTS-to-self) and I/J (rx_intf recovery/reset); (5) coverage
+closure (rate × length × GI, CSMA states, filter flags, queue × priority); (6) RFSoC adapter TB.
