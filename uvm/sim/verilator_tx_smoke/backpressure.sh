@@ -10,11 +10,13 @@ HERE=$(cd "$(dirname "$0")" && pwd)
 HW=${OPENWIFI_HW:?set OPENWIFI_HW}
 SRC=$HW/ip/openofdm_tx/src
 WORK=${WORK:-$HERE/work_bp}; mkdir -p "$WORK" && cd "$WORK"
+# -Wno-USEBEFOREDECL exists only in Verilator > 5.054
+WNO_UBD=$(verilator -Wno-USEBEFOREDECL --version >/dev/null 2>&1 && echo -Wno-USEBEFOREDECL || true)
 ln -sf "$SRC"/icmem_*.mem .
-[ -x obj_dir/simv ] || verilator --binary --timing -Wno-fatal -Wno-lint -Wno-style -Wno-USEBEFOREDECL --top-module tb \
+[ -x obj_dir/simv ] || verilator --binary --timing -Wno-fatal -Wno-lint -Wno-style $WNO_UBD --top-module tb \
   -I"$SRC" -I"$HERE/../gen_inc" "$HERE/tb_backpressure.sv" \
   $(ls "$SRC"/*.v | grep -v -e _tb.v -e openofdm_tx.v -e s_axi) -o simv >/dev/null
-[ -x obj_hp/simv ] || verilator --binary --timing -Wno-fatal -Wno-lint -Wno-style -Wno-USEBEFOREDECL --Mdir obj_hp \
+[ -x obj_hp/simv ] || verilator --binary --timing -Wno-fatal -Wno-lint -Wno-style $WNO_UBD --Mdir obj_hp \
   --top-module tb -I"$SRC" -I"$HERE/../gen_inc" "$HERE/tb_holdpattern.sv" \
   $(ls "$SRC"/*.v | grep -v -e _tb.v -e openofdm_tx.v -e s_axi) -o simv >/dev/null
 fail=0

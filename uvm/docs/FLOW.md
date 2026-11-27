@@ -41,7 +41,8 @@ hardware-in-the-loop), not a Palladium/Protium-class emulator.
 | S6 emulation | `[board]` | release, on demand | 1–4 h | §6 pass criteria |
 
 Runners: S0 runs on GitHub-hosted Linux runners or the cloud container (no licence needed). S1–S6 run on the
-self-hosted runner on the desktop (Vivado 2022.2, Viterbi evaluation licence), labels `vivado` and `board`.
+self-hosted runner on the desktop (Vivado 2022.2, Viterbi evaluation licence), labels `vivado` and `board`
+(setup: [RUNNER.md](RUNNER.md)).
 The board is reached over JTAG (bitstream, ILA) and Ethernet (ssh to the board's Linux).
 
 ---
@@ -53,8 +54,10 @@ Already in place on `uvm-verification`:
 `sim/verilator_tx_smoke/backpressure.sh`, `scripts/check_tx_dumps.py`, `scripts/py_rx_decode.py`,
 `scripts/htsig_noise.py`.
 
-To add: `.github/workflows/s0.yml` that builds Verilator + uvm-core once (cached) and runs the
-list above. This is the only stage that must pass on every push.
+CI: `.github/workflows/s0.yml` builds Verilator v5.054 + uvm-core 2020.3.0 once (Actions cache) and
+runs `scripts/ci_s0.sh` (steps prep, lint, smoke, backpressure, otx, golden, pyrx, htsig; see
+[RUNNER.md](RUNNER.md) §1). This is the only stage that must pass on every push. The same script runs
+locally: `UVM_SRC=<uvm-core>/src scripts/ci_s0.sh [steps…]`.
 
 ---
 
@@ -182,7 +185,7 @@ in the regression.
 
 ## 7. Work items, in order
 
-1. CI workflow for S0 (`.github/workflows/s0.yml`). Self-hosted runner on the desktop with labels `vivado` and later `board`.
+1. ~~CI workflow for S0 (`.github/workflows/s0.yml`)~~ done. Self-hosted runner on the desktop with labels `vivado` and later `board`: setup in [RUNNER.md](RUNNER.md) §2.
 2. S1 on xsim: `make xip`, openofdm_rx vectors, then tx_intf, rx_intf, xpu, side_ch bring-up.
 3. S2: chip tests on xsim, plus `chip_loopback_test` and the tx_intf `wifi_iq_ready` delay root cause.
 4. S3 on ZC706 (`zc706_fmcs2`): `s3_build.tcl`, gates, RTL manifest.

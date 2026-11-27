@@ -28,7 +28,7 @@ NUM_CLK_PER_US ?= 100
 PLUSARGS       ?=
 BUILD          := $(OW_UVM)/build
 RUN             = $(BUILD)/run/$(TB)_$(TEST)_$(SEED)
-XILINX_VIVADO  ?= $(shell dirname $$(dirname $$(which vivado 2>/dev/null)) 2>/dev/null)
+XILINX_VIVADO  ?= $(shell v=$$(which vivado 2>/dev/null) && dirname $$(dirname $$v))
 # slang lint only: path to uvm-core/src
 UVM_SRC        ?= 
 
@@ -159,16 +159,23 @@ endif
 
 # ---------------------------------------------------------------- Verilator (open source)
 VERILATOR ?= verilator
+# -Wno-USEBEFOREDECL exists only in Verilator > 5.054; pass it when the binary knows it
+VLT_WNO_UBD = $(shell $(VERILATOR) -Wno-USEBEFOREDECL --version >/dev/null 2>&1 && echo -Wno-USEBEFOREDECL)
+# One model per TB, shared by all its tests and seeds: Verilator skips regeneration when its
+# inputs are unchanged (--skip-identical, the default), so only the first test of a TB compiles.
+# The UVM C++ needs ~2.5 GB per compiler job: lower VLT_JOBS on small machines.
+VLT_DIR  = $(BUILD)/vlt/$(TB)
+VLT_JOBS ?= $(shell nproc)
 ifeq ($(SIM),verilator)
 compile:
-	mkdir -p $(RUN) && cd $(RUN) && \
-	$(VERILATOR) --binary --timing -j $$(nproc) -Wno-fatal -Wno-lint -Wno-style -Wno-WIDTH -Wno-USEBEFOREDECL \
+	mkdir -p $(VLT_DIR) && cd $(VLT_DIR) && \
+	$(VERILATOR) --binary --timing -j $(VLT_JOBS) -Wno-fatal -Wno-lint -Wno-style -Wno-WIDTH $(VLT_WNO_UBD) \
 	  --top-module $(TOP) +define+UVM_NO_DPI $(DEFS) +incdir+$(UVM_SRC) $(INCS) \
 	  $$( [ "$(XIP)" = "1" -o "$(TB)" != "openofdm_tx" ] && echo $(XPM_SRC) ) \
 	  $(UVM_SRC)/uvm_pkg.sv $(COMMON) $(RTL_F) $(SRC_$(TB)) -o simv > build.log 2>&1 || (grep %Error build.log | head; exit 1)
 run: compile
-	cd $(RUN) && ln -sf $(OW_HW)/ip/openofdm_tx/src/icmem_*.mem . && \
-	./obj_dir/simv +UVM_TESTNAME=$(TEST) +UVM_VERBOSITY=$(VERB) +verilator+seed+$(SEED) $(PLUSARGS) | tee sim.log
+	mkdir -p $(RUN) && cd $(RUN) && ln -sf $(OW_HW)/ip/openofdm_tx/src/icmem_*.mem . && \
+	$(VLT_DIR)/obj_dir/simv +UVM_TESTNAME=$(TEST) +UVM_VERBOSITY=$(VERB) +verilator+seed+$(SEED) $(PLUSARGS) | tee sim.log
 endif
 
 # ---------------------------------------------------------------- regression

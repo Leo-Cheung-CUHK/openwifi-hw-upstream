@@ -1,0 +1,91 @@
+# S0 gate (uvm/docs/FLOW.md §2): lint, Verilator UVM regression of openofdm_tx, smoke,
+# back-pressure, golden-capture comparison and the Python receiver checks.
+# No Vivado, no licence: runs on GitHub-hosted Linux. Must pass on every push.
+name: S0 (lint + Verilator)
+
+on:
+  push:
+    branches: [uvm-verification]
+    paths: ['uvm/**', 'ip/**', 'boards/**', '.github/workflows/s0.yml']
+  pull_request:
+    paths: ['uvm/**', 'ip/**', 'boards/**', '.github/workflows/s0.yml']
+  workflow_dispatch:
+
+concurrency:
+  group: s0-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  VERILATOR_VERSION: v5.054
+  UVM_CORE_VERSION: '2020.3.0'
+  TOOLS: /home/runner/s0-tools        # outside the checkout; restored from the cache
+
+jobs:
+  s0:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: false            # adi-hdl is not needed for simulation
+
+      - name: openofdm_rx submodule
+        run: git submodule update --init --depth 1 ip/openofdm_rx
+
+      - name: System packages
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq git make g++ autoconf flex bison help2man perl \
+            libfl2 libfl-dev zlib1g-dev z3 ccache
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: uvm/scripts/requirements-ci.txt
+      - run: pip install -r uvm/scripts/requirements-ci.txt
+
+      - name: Cache Verilator + uvm-core
+        id: tools
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.TOOLS }}
+          key: tools-${{ runner.os }}-24.04-verilator-${{ env.VERILATOR_VERSION }}-uvm-${{ env.UVM_CORE_VERSION }}
+
+      - name: Build Verilator ${{ env.VERILATOR_VERSION }}, fetch uvm-core ${{ env.UVM_CORE_VERSION }}
+        if: steps.tools.outputs.cache-hit != 'true'
+        run: |
+          mkdir -p "$TOOLS" && cd "$TOOLS"
+          git clone -q --depth 1 -b "$UVM_CORE_VERSION" https://github.com/accellera-official/uvm-core uvm-core
+          git clone -q --depth 1 -b "$VERILATOR_VERSION" https://github.com/verilator/verilator verilator-src
+          cd verilator-src && autoconf && ./configure --prefix="$TOOLS/verilator"
+          make -j"$(nproc)" && make install
+          cd .. && rm -rf verilator-src
+
+      - name: Cache ccache (Verilator C++ objects)
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ccache
+          key: ccache-${{ env.VERILATOR_VERSION }}-${{ hashFiles('uvm/verif/**', 'ip/openofdm_tx/src/**') }}
+          restore-keys: ccache-${{ env.VERILATOR_VERSION }}-
+
+      - name: Tool versions
+        run: |
+          echo "$TOOLS/verilator/bin" >> "$GITHUB_PATH"
+          "$TOOLS/verilator/bin/verilator" --version
+          z3 --version; python3 --version
+          python3 -c "import numpy, pyslang; print('numpy', numpy.__version__, 'pyslang', pyslang.__version__)"
+          git -C ip/openofdm_rx log -1 --format='openofdm_rx %h %s'
+
+      - name: S0 gate
+        run: UVM_SRC="$TOOLS/uvm-core/src" uvm/scripts/ci_s0.sh
+
+      - name: Logs and captures
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: s0-logs
+          path: |
+            uvm/build/ci/
+            uvm/build/run/*/sim.log
+          retention-days: 14

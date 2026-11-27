@@ -2,7 +2,7 @@
 
 Chip-level and block-level UVM verification for [open-sdr/openwifi-hw](https://github.com/open-sdr/openwifi-hw)
 (802.11a/g/n PL: tx_intf, openofdm_tx, rx_intf, openofdm_rx, xpu, side_ch).
-Design and rationale: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md). Flow from UVM to FPGA build, netlist sim and on-board emulation: [docs/FLOW.md](docs/FLOW.md). Test plan: [docs/test_plan.xlsx](docs/test_plan.xlsx).
+Design and rationale: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md). Flow from UVM to FPGA build, netlist sim and on-board emulation: [docs/FLOW.md](docs/FLOW.md). Test plan: [docs/test_plan.xlsx](docs/test_plan.xlsx). CI and runners: [docs/RUNNER.md](docs/RUNNER.md).
 
 ```
 rtl_wrap/            openwifi_core_top.sv (generated from system.bd), axil_decoder.sv
@@ -10,7 +10,8 @@ verif/common/        shared VIP: axil, axis, iq, phy_rx, phy_tx, irq, wifi model
 verif/block/<ip>/    one UVM TB per IP (tb_<ip>.sv + <ip>_tb_pkg.sv)
 verif/chip/          chip TB: DUT + peer station (second openofdm_tx/rx) + scoreboards
 scripts/             gen_core_top.py, prep_rtl.py, wifi_ref_tx.py (802.11 reference TX),
-                     gen_rx_vectors.py, check_tx_dumps.py, gen_xilinx_ip_sim.tcl, slang_lint.py
+                     gen_rx_vectors.py, check_tx_dumps.py, gen_xilinx_ip_sim.tcl, slang_lint.py,
+                     ci_s0.sh (S0 gate, run by .github/workflows/s0.yml)
 sim/                 Makefile (xsim / questa / vcs / xcelium), gen_inc/ (FPGA-flow headers),
                      verilator_tx_smoke/ (no-licence PHY check + back-pressure repro)
 ```
