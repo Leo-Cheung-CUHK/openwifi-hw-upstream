@@ -107,8 +107,15 @@ see your Python or the Vivado licence, change the service to log on as your user
 (services.msc → the runner service → Log On), or run `.\run.cmd` in a terminal instead.
 Add the `board` label later, once the ZC706 is attached.
 
-Check: Actions → **S1 (xsim, Windows desktop)** → Run workflow → `what = env`. Then `run`
-(openofdm_tx), then `xip`, then `regress`.
+Check: Actions → **S1 (xsim, Windows desktop)** → Run workflow → branch `uvm-verification`,
+`what = env`. Then `run` (openofdm_tx), then `xip`, then `regress`.
+
+GitHub only shows "Run workflow" for a `workflow_dispatch` workflow whose file is on the
+**default branch**. The fork's default is `master` (it tracks upstream), so either make
+`uvm-verification` the default branch (Settings → General → Default branch), or start it from a
+terminal: `gh workflow run s1.yml --ref uvm-verification -f what=env` (this also needs the file
+on the default branch the first time GitHub registers it). Changing the default branch is the
+simple option for this fork.
 
 ### 2.5 Security (public repository)
 
