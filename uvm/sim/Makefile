@@ -38,13 +38,15 @@ TOP_openofdm_tx := tb_openofdm_tx
 IPS_openofdm_tx := openofdm_tx
 XIP_openofdm_tx := 0
 SRC_openofdm_tx  := $(V)/block/openofdm_tx/openofdm_tx_tb_pkg.sv $(V)/block/openofdm_tx/tb_openofdm_tx.sv
-TESTS_openofdm_tx := otx_reg_reset_test otx_rate_sweep_test otx_random_test otx_backpressure_test
+TESTS_openofdm_tx := otx_reg_reset_test otx_rate_sweep_test otx_random_test otx_backpressure_test \
+                     otx_scrambler_seed_test otx_ampdu_test otx_reset_midpacket_test
 
 TOP_openofdm_rx := tb_openofdm_rx
 IPS_openofdm_rx := openofdm_rx
 XIP_openofdm_rx := 1
 SRC_openofdm_rx  := $(V)/block/openofdm_rx/openofdm_rx_tb_pkg.sv $(V)/block/openofdm_rx/tb_openofdm_rx.sv
-TESTS_openofdm_rx := orx_reg_reset_test orx_vectors_test orx_impair_test
+TESTS_openofdm_rx := orx_reg_reset_test orx_vectors_test orx_impair_test \
+                     orx_snr_sweep_test orx_len_limits_test orx_b2b_test
 
 TOP_tx_intf := tb_tx_intf
 IPS_tx_intf := tx_intf
@@ -77,6 +79,13 @@ SRC_chip         := $(OW_UVM)/rtl_wrap/axil_decoder.sv $(OW_UVM)/rtl_wrap/openwi
                     $(V)/chip/dac_to_peer_rx.sv $(V)/chip/chip_tb_pkg.sv $(V)/chip/tb_chip.sv
 TESTS_chip       := chip_reg_test chip_tx_test chip_rx_test chip_ack_test chip_mixed_test
 
+# per-test default plusargs (used by run/regress here and by xsim.py); PLUSARGS adds to them
+ARGS_orx_vectors_test     := +RX_VEC_LIST=$(BUILD)/lists/rx_simulated.list
+ARGS_orx_impair_test      := +RX_VEC_LIST=$(BUILD)/lists/rx_generated.list
+ARGS_orx_snr_sweep_test   := +RX_VEC_LIST=$(BUILD)/lists/rx_clean.list
+ARGS_orx_len_limits_test  := +RX_VEC_LIST=$(BUILD)/lists/rx_craft.list
+ARGS_orx_b2b_test         := +RX_VEC_LIST=$(BUILD)/lists/rx_clean.list +IQ_NOISE=4
+
 TOP   = $(strip $(TOP_$(TB)))
 IPS   = $(IPS_$(TB))
 XIP   = $(strip $(XIP_$(TB)))
@@ -101,6 +110,12 @@ rxlists:
 	ls $(OW_HW)/ip/openofdm_rx/testing_inputs/conducted/*.txt > $(BUILD)/lists/rx_conducted.list
 	python3 $(OW_UVM)/scripts/gen_rx_vectors.py --out $(BUILD)/rxgen -n 50 --snr 30 --cfo-hz 20e3
 	cp $(BUILD)/rxgen/list.txt $(BUILD)/lists/rx_generated.list
+	python3 $(OW_UVM)/scripts/gen_rx_vectors.py --out $(BUILD)/rxclean -n 24 --seed 7 --max-len 400
+	cp $(BUILD)/rxclean/list.txt $(BUILD)/lists/rx_clean.list
+	python3 $(OW_UVM)/scripts/gen_rx_vectors.py --out $(BUILD)/rxcraft --craft
+	cp $(BUILD)/rxcraft/list.txt $(BUILD)/lists/rx_craft.list
+# rx_clean.list : clean generated frames, for orx_snr_sweep_test (AWGN added in the TB) and orx_b2b_test
+# rx_craft.list : header-limit vectors (.rej / .exp), for orx_len_limits_test
 
 prep:
 	python3 $(OW_UVM)/scripts/gen_core_top.py --hw $(OW_HW) --board $(BOARD) -o $(OW_UVM)/rtl_wrap/openwifi_core_top.sv
@@ -122,7 +137,7 @@ compile:
 run: compile
 	cd $(RUN) && ln -sf $(OW_HW)/ip/openofdm_tx/src/icmem_*.mem . && \
 	xsim $(TOP)_snap -R -sv_seed $(SEED) -testplusarg UVM_TESTNAME=$(TEST) -testplusarg UVM_VERBOSITY=$(VERB) \
-	  $(foreach p,$(PLUSARGS),-testplusarg $(patsubst +%,%,$(p))) | tee sim.log
+	  $(foreach p,$(ARGS_$(TEST)) $(PLUSARGS),-testplusarg $(patsubst +%,%,$(p))) | tee sim.log
 endif
 
 # ---------------------------------------------------------------- Questa
@@ -134,7 +149,7 @@ compile:
 run: compile
 	cd $(RUN) && ln -sf $(OW_HW)/ip/openofdm_tx/src/icmem_*.mem . && \
 	vsim -c -sv_seed $(SEED) $(TOP) glbl $$( [ "$(XIP)" = "1" ] && sed 's/ .*//' $(XIP_DIR)/xip_sources.txt | sort -u | sed 's/^/-L /') \
-	  +UVM_TESTNAME=$(TEST) +UVM_VERBOSITY=$(VERB) $(PLUSARGS) -do "run -all; quit -f" | tee sim.log
+	  +UVM_TESTNAME=$(TEST) +UVM_VERBOSITY=$(VERB) $(ARGS_$(TEST)) $(PLUSARGS) -do "run -all; quit -f" | tee sim.log
 endif
 
 # ---------------------------------------------------------------- VCS
@@ -146,7 +161,7 @@ compile:
 	  $(COMMON) $(RTL_F) $(SRC_$(TB)) -top $(TOP) -top glbl -o simv
 run: compile
 	cd $(RUN) && ln -sf $(OW_HW)/ip/openofdm_tx/src/icmem_*.mem . && \
-	./simv +ntb_random_seed=$(SEED) +UVM_TESTNAME=$(TEST) +UVM_VERBOSITY=$(VERB) $(PLUSARGS) | tee sim.log
+	./simv +ntb_random_seed=$(SEED) +UVM_TESTNAME=$(TEST) +UVM_VERBOSITY=$(VERB) $(ARGS_$(TEST)) $(PLUSARGS) | tee sim.log
 endif
 
 # ---------------------------------------------------------------- Xcelium
@@ -154,7 +169,7 @@ ifeq ($(SIM),xcelium)
 run:
 	mkdir -p $(RUN) && cd $(RUN) && ln -sf $(OW_HW)/ip/openofdm_tx/src/icmem_*.mem . && \
 	xrun -64bit -uvm -timescale 1ns/1ps $(INCS) $(DEFS) $(XPM_SRC) $(GLBL) $(COMMON) $(RTL_F) $(SRC_$(TB)) \
-	  -top $(TOP) -top glbl -svseed $(SEED) +UVM_TESTNAME=$(TEST) +UVM_VERBOSITY=$(VERB) $(PLUSARGS) | tee sim.log
+	  -top $(TOP) -top glbl -svseed $(SEED) +UVM_TESTNAME=$(TEST) +UVM_VERBOSITY=$(VERB) $(ARGS_$(TEST)) $(PLUSARGS) | tee sim.log
 endif
 
 # ---------------------------------------------------------------- Verilator (open source)
@@ -175,11 +190,11 @@ compile:
 	  $(UVM_SRC)/uvm_pkg.sv $(COMMON) $(RTL_F) $(SRC_$(TB)) -o simv > build.log 2>&1 || (grep %Error build.log | head; exit 1)
 run: compile
 	mkdir -p $(RUN) && cd $(RUN) && ln -sf $(OW_HW)/ip/openofdm_tx/src/icmem_*.mem . && \
-	$(VLT_DIR)/obj_dir/simv +UVM_TESTNAME=$(TEST) +UVM_VERBOSITY=$(VERB) +verilator+seed+$(SEED) $(PLUSARGS) | tee sim.log
+	$(VLT_DIR)/obj_dir/simv +UVM_TESTNAME=$(TEST) +UVM_VERBOSITY=$(VERB) +verilator+seed+$(SEED) $(ARGS_$(TEST)) $(PLUSARGS) | tee sim.log
 endif
 
 # ---------------------------------------------------------------- regression
-regress:
+regress: rxlists
 	@for tb in openofdm_tx openofdm_rx tx_intf rx_intf xpu side_ch chip; do \
 	  for t in $$($(MAKE) -s print-tests TB=$$tb); do \
 	    $(MAKE) run TB=$$tb TEST=$$t SEED=$(SEED) > /dev/null 2>&1; \

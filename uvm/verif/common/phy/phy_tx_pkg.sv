@@ -53,6 +53,8 @@ package phy_tx_pkg;
     `uvm_component_utils(phy_tx_bram_server)
     virtual phy_tx_if vif; phy_tx_cfg cfg;
     bit [63:0] mem[1024];
+    bit abort;                                 // set by a test that resets the PHY mid-packet:
+                                               // stop waiting for this frame's phy_tx_done
     uvm_analysis_port #(wifi_frame) sent_ap;   // frame handed to the PHY (for scoreboards)
     function new(string name, uvm_component parent); super.new(name, parent); sent_ap = new("sent_ap", this); endfunction
     task run_phase(uvm_phase phase);
@@ -88,8 +90,9 @@ package phy_tx_pkg;
         req.bram_words(w);
         foreach (mem[k]) mem[k] = (k < w.size()) ? w[k] : '0;
         sent_ap.write(req);
+        abort = 0;
         vif.srv_cb.phy_tx_start <= 1; @(vif.srv_cb); vif.srv_cb.phy_tx_start <= 0;
-        do @(vif.srv_cb); while (!vif.srv_cb.phy_tx_done);
+        do @(vif.srv_cb); while (!vif.srv_cb.phy_tx_done && !abort);
         repeat (cfg.ifs_clks) @(vif.srv_cb);
         seq_item_port.item_done();
       end
@@ -151,7 +154,7 @@ package phy_tx_pkg;
       forever begin
         @(vif.mon_cb);
         if (!vif.rst_n) begin o = null; a_pipe.delete(); continue; end
-        if (vif.mon_cb.phy_tx_start && o == null) begin
+        if (vif.mon_cb.phy_tx_start) begin   // a start with o != null: previous packet aborted, drop it
           o = phy_tx_obs::type_id::create("obs"); o.t_start = $time; a_pipe.delete();
         end
         if (o == null) continue;

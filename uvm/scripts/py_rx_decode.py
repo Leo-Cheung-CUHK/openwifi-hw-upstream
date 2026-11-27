@@ -50,7 +50,7 @@ def load_decoder():
     return mod
 
 
-def decode_one(dec_mod, iq_txt, mpdu, ht, rate, sgi):
+def decode_one(dec_mod, iq_txt, mpdu, ht, rate, sgi, aggr=0):
     """Run decode.py's Decoder.decode() from the first sample of the burst. (decode.py's
     own find_pkt() takes the two largest LTF correlation values and requires them 64 apart;
     on clean captures a sidelobe of the first peak wins and decode_next() never returns.
@@ -70,7 +70,8 @@ def decode_one(dec_mod, iq_txt, mpdu, ht, rate, sgi):
     if not res or len(res) < 7:
         return False, "no frame decoded (SIG check failed)", log.getvalue()
     signal, data = res[0], res[6]
-    psdu = bytes(mpdu) + zlib.crc32(bytes(mpdu)).to_bytes(4, "little")
+    # A-MPDU dumps hold the whole PSDU (the PHY appends no FCS)
+    psdu = bytes(mpdu) if aggr else bytes(mpdu) + zlib.crc32(bytes(mpdu)).to_bytes(4, "little")
     if bool(signal.ht) != bool(ht):
         why = "decoded as legacy: HT-SIG CRC failed" if ht else "decoded as HT"
         return False, why, log.getvalue()
@@ -92,8 +93,8 @@ def _init():
     global _DEC
     _DEC = load_decoder()
 def _run(job):
-    n, iq, mpdu, ht, rate, sgi = job
-    return decode_one(_DEC, iq, mpdu, ht, rate, sgi)
+    n, iq, mpdu, ht, rate, sgi, aggr = job
+    return decode_one(_DEC, iq, mpdu, ht, rate, sgi, aggr)
 
 
 def main():
@@ -106,17 +107,20 @@ def main():
     a = ap.parse_args()
     jobs = []
     if a.iq:
-        jobs.append(("cli", a.iq, bytes.fromhex(a.mpdu), a.ht, a.rate, a.sgi))
+        jobs.append(("cli", a.iq, bytes.fromhex(a.mpdu), a.ht, a.rate, a.sgi, 0))
     else:
         for fj in sorted(glob.glob(os.path.join(a.dir, "frame_*.json"))):
             j = json.load(open(fj)); n = fj[-9:-5]
+            if j.get("pilot_seed", 0x7F) != 0x7F:
+                print(f"[{n}] SKIP non-standard pilot seed 0x{j['pilot_seed']:02x} (decode.py assumes 0x7F)")
+                continue
             jobs.append((n, os.path.join(a.dir, f"rtl_{n}.txt"), bytes.fromhex(j["mpdu_hex"]),
-                         j["ht"], j["rate"], j.get("sgi", 0)))
+                         j["ht"], j["rate"], j.get("sgi", 0), j.get("aggr", 0)))
     bad = 0
     from concurrent.futures import ProcessPoolExecutor
     with ProcessPoolExecutor(max_workers=a.j, initializer=_init) as ex:
         results = list(ex.map(_run, jobs))
-    for (n, iq, mpdu, ht, rate, sgi), (ok, why, log) in zip(jobs, results):
+    for (n, iq, mpdu, ht, rate, sgi, _), (ok, why, log) in zip(jobs, results):
         tag = f"{'HT-MCS%d' % rate if ht else '%dM' % rate}{'-SGI' if sgi else ''} len={len(mpdu)}"
         print(f"[{n}] {'PASS' if ok else 'FAIL'} {tag}: {why}")
         if a.v and not ok:

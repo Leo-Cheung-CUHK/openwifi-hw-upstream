@@ -8,7 +8,9 @@ d=pyslang.driver.Driver(); d.addStandardArgs()
 cmd="slang --top "+top+" --ignore-unknown-modules -Wno-unused -Wno-unconnected-output-port -Wno-redef-macro --timescale 1ns/1ps --allow-use-before-declare --single-unit --error-limit=500 "+" ".join(args[1:])
 a=d.parseCommandLine(cmd, pyslang.driver.CommandLineOptions()); b=d.processOptions(); c=d.parseAllSources()
 comp=d.createCompilation(); ok=d.reportCompilation(comp,False)
-n=sum(1 for x in comp.getAllDiagnostics() if x.isError())
+# diagEngine applies slang's severity mapping (e.g. -Wstring-int-concat is an error by
+# default); the raw getAllDiagnostics() list does not, and missed such errors
+n=d.diagEngine.numErrors
 ok = bool(a and b and c) and n == 0   # reportCompilation() returns None in pyslang
 print("RESULT", "PASS" if ok else f"FAIL ({n} errors)")
 sys.exit(0 if ok else 1)

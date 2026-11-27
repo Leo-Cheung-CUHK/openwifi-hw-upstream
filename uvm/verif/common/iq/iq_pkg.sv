@@ -214,6 +214,39 @@ package iq_pkg;
         t.i0[k] = sat(i * c - q * s); t.q0[k] = sat(i * s + q * c);
       end
     endfunction
+    // complex AWGN at snr_db relative to the mean power of the non-idle samples
+    // (Box-Muller on $urandom, so the noise follows the simulator seed)
+    static function void awgn(iq_item t, real snr_db);
+      real p = 0, sig, u1, u2, r; int unsigned n = 0;
+      foreach (t.i0[k]) if (t.i0[k] != 0 || t.q0[k] != 0) begin p += real'(t.i0[k])**2 + real'(t.q0[k])**2; n++; end
+      if (n == 0) return;
+      sig = $sqrt(p / n / (10.0 ** (snr_db / 10.0)) / 2.0);
+      foreach (t.i0[k]) begin
+        u1 = (real'($urandom) + 1.0) / 4294967297.0; u2 = real'($urandom) / 4294967296.0;
+        r = sig * $sqrt(-2.0 * $ln(u1));
+        t.i0[k] = sat(real'(t.i0[k]) + r * $cos(2.0 * 3.14159265358979 * u2));
+        t.q0[k] = sat(real'(t.q0[k]) + r * $sin(2.0 * 3.14159265358979 * u2));
+      end
+    endfunction
+    // n samples of complex Gaussian noise with the given rms (per complex sample)
+    static function iq_item noise(int unsigned n, real rms);
+      iq_item t = new("noise"); real u1, u2, r;
+      repeat (n) begin
+        u1 = (real'($urandom) + 1.0) / 4294967297.0; u2 = real'($urandom) / 4294967296.0;
+        r = rms / $sqrt(2.0) * $sqrt(-2.0 * $ln(u1));
+        t.i0.push_back(sat(r * $cos(2.0 * 3.14159265358979 * u2))); t.q0.push_back(sat(r * $sin(2.0 * 3.14159265358979 * u2)));
+        t.i1.push_back(0); t.q1.push_back(0);
+      end
+      return t;
+    endfunction
+    // append b after a, separated by gap zero samples (back-to-back bursts in one item)
+    static function void concat(iq_item a, iq_item b, int unsigned gap);
+      repeat (gap) begin a.i0.push_back(0); a.q0.push_back(0); a.i1.push_back(0); a.q1.push_back(0); end
+      foreach (b.i0[k]) begin
+        a.i0.push_back(b.i0[k]); a.q0.push_back(b.q0[k]);
+        a.i1.push_back(k < b.i1.size() ? b.i1[k] : 0); a.q1.push_back(k < b.q1.size() ? b.q1[k] : 0);
+      end
+    endfunction
     static function shortint sat(real x);
       if (x > 32767.0) return 32767; if (x < -32768.0) return -32768; return shortint'($rtoi(x));
     endfunction

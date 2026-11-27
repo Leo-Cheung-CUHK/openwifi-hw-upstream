@@ -47,11 +47,18 @@ package phy_rx_pkg;
     uvm_analysis_port #(phy_rx_result) ap;
     function new(string name, uvm_component parent); super.new(name, parent); ap = new("ap", this); endfunction
     task run_phase(uvm_phase phase);
-      phy_rx_result r; bit in_data; time t_pre;
+      phy_rx_result r; bit in_data, unsup_d; time t_pre;
       forever begin
         @(vif.mon_cb);
-        if (!vif.rst_n) begin r = null; in_data = 0; continue; end
+        if (!vif.rst_n) begin r = null; in_data = 0; unsup_d = 0; continue; end
         if (vif.mon_cb.long_preamble_detected) t_pre = $time;
+        // HT-SIG rejected (dot11.v S_CHECK_HT_SIG -> S_HT_SIG_ERROR) without a header strobe
+        if (vif.mon_cb.ht_unsupport && !unsup_d && !vif.mon_cb.pkt_header_valid_strobe) begin
+          phy_rx_result u = phy_rx_result::type_id::create("rx_unsup");
+          u.ht_unsupport = 1; u.ht = 1; u.t_preamble = t_pre; u.t_header = $time;
+          ap.write(u);
+        end
+        unsup_d = vif.mon_cb.ht_unsupport;
         if (vif.mon_cb.pkt_header_valid_strobe) begin
           r = phy_rx_result::type_id::create("rx");
           r.header_ok = vif.mon_cb.pkt_header_valid; r.ht_unsupport = vif.mon_cb.ht_unsupport;

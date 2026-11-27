@@ -33,6 +33,39 @@ package wifi_pkg;
     return ~c;
   endfunction
 
+  // CRC-8 x^8+x^2+x+1, init all ones, complemented, over n bits LSB first
+  // (802.11 HT-SIG CRC and the A-MPDU delimiter CRC use the same generator)
+  function automatic bit [7:0] crc8_bits(bit [63:0] d, int unsigned n);
+    bit [7:0] c = 8'hFF; bit t;
+    for (int i = 0; i < n; i++) begin
+      t = c[7] ^ d[i];
+      c = {c[6:3], c[2], c[1] ^ t, c[0] ^ t, t};
+    end
+    return ~{c[0], c[1], c[2], c[3], c[4], c[5], c[6], c[7]};
+  endfunction
+
+  // A-MPDU (802.11-2020 9.7): per subframe a 4-byte delimiter {EOF/rsvd[3:0], length[15:4],
+  // CRC-8[23:16], signature 0x4E}, the MPDU with its FCS, then 0-3 pad bytes to a 4-byte
+  // boundary (no pad after the last subframe). mpdus = concatenated MPDUs without FCS,
+  // lens = their lengths. Returns the PSDU bytes the PHY transmits unchanged.
+  function automatic void ampdu_pack(const ref byte unsigned mpdus[$], input int unsigned lens[$],
+                                     ref byte unsigned out[$]);
+    int unsigned pos = 0;
+    out.delete();
+    foreach (lens[s]) begin
+      byte unsigned m[$]; bit [31:0] f; bit [15:0] d16; int unsigned l = lens[s] + 4;
+      for (int k = 0; k < lens[s]; k++) m.push_back(mpdus[pos + k]);
+      pos += lens[s];
+      f = crc32(m, m.size());
+      d16 = {12'(l), 4'h0};
+      out.push_back(d16[7:0]); out.push_back(d16[15:8]);
+      out.push_back(crc8_bits(64'(d16), 16)); out.push_back(8'h4E);
+      foreach (m[k]) out.push_back(m[k]);
+      for (int k = 0; k < 4; k++) out.push_back(f[8*k +: 8]);
+      if (s != lens.size() - 1) while (out.size() % 4) out.push_back(8'h00);
+    end
+  endfunction
+
   // ---------------------------------------------------------------- frame item
   class wifi_frame extends uvm_sequence_item;
     // PHY
@@ -99,15 +132,18 @@ package wifi_pkg;
       bit [47:0] a; for (int k = 0; k < 6; k++) a[8*k +: 8] = mpdu[4 + 6*(n-1) + k]; return a;
     endfunction
 
-    // PSDU as transmitted over the air: MPDU + FCS (little-endian FCS)
+    // PSDU as transmitted over the air: MPDU + FCS (little-endian FCS).
+    // ht_aggr: mpdu[] already holds the whole A-MPDU (delimiters, MPDUs with their FCS,
+    // padding; see ampdu_pack()) and the PHY appends nothing (dot11_tx HT_AGGR path).
     function void psdu(ref byte unsigned p[$]);
       bit [31:0] f;
       p.delete(); foreach (mpdu[k]) p.push_back(mpdu[k]);
+      if (ht_aggr) return;
       f = crc32(p, p.size());
       for (int k = 0; k < 4; k++) p.push_back(f[8*k +: 8]);
     endfunction
-    function int unsigned sig_len();       // L-SIG / HT-SIG LENGTH (tx_bit_intf: len_psdu + 4)
-      return mpdu_len + 4;
+    function int unsigned sig_len();       // L-SIG / HT-SIG LENGTH (tx_bit_intf: len_psdu + 4; A-MPDU: sum of subframes)
+      return ht_aggr ? mpdu_len : mpdu_len + 4;
     endfunction
     function int unsigned n_sym();
       int unsigned nd = n_dbps(ht, rate_hw), nb = 16 + 8 * sig_len() + 6;

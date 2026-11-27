@@ -70,8 +70,10 @@ def scramble(bits, seed=0x7F):
     return out
 
 
-def pilot_polarity(n=127):
-    s = [1] * 7
+def pilot_polarity(n=127, seed=0x7F):
+    # dot11_tx.v pilot_scram_state: same LFSR as the data scrambler, bit i == s[i];
+    # 802.11 p_n is the sequence from the all-ones state (seed 0x7F)
+    s = [(seed >> i) & 1 for i in range(7)]
     p = []
     for _ in range(n):
         fb = s[6] ^ s[3]
@@ -151,7 +153,8 @@ def ofdm_sym(data, pilots_val, ht, cp=16):
     return np.r_[x[-cp:], x]
 
 
-def field_symbols(bits, nbpsc, rate, ht_il, n_sym, pol_start, ht_pilots, qbpsk=False, sgi=False):
+def field_symbols(bits, nbpsc, rate, ht_il, n_sym, pol_start, ht_pilots, qbpsk=False, sgi=False, pol=None):
+    pol = POL if pol is None else pol
     ncbps = nbpsc * (52 if ht_il else 48)
     a, b = conv(bits)
     coded = puncture(a, b, rate)
@@ -161,7 +164,7 @@ def field_symbols(bits, nbpsc, rate, ht_il, n_sym, pol_start, ht_pilots, qbpsk=F
         d = qam(blk, nbpsc)
         if qbpsk:
             d = d * 1j
-        p = POL[(pol_start + n) % 127]
+        p = pol[(pol_start + n) % 127]
         if ht_pilots:
             psi = [1, 1, 1, -1]
             pv = [p * psi[(m + n) % 4] for m in range(4)]
@@ -171,8 +174,11 @@ def field_symbols(bits, nbpsc, rate, ht_il, n_sym, pol_start, ht_pilots, qbpsk=F
     return out
 
 
-def build(ht, rate, sgi, mpdu, seed=0x7F, lsig_bits=None, htsig_bits=None, pad_mode="standard"):
-    psdu = list(mpdu) + list(crc32(bytes(mpdu)).to_bytes(4, "little"))
+def build(ht, rate, sgi, mpdu, seed=0x7F, lsig_bits=None, htsig_bits=None, pad_mode="standard",
+          aggr=False, pilot_seed=0x7F):
+    # aggr: mpdu is the whole A-MPDU PSDU (delimiters, MPDUs with FCS, pad); no FCS added
+    psdu = list(mpdu) if aggr else list(mpdu) + list(crc32(bytes(mpdu)).to_bytes(4, "little"))
+    pol = pilot_polarity(seed=pilot_seed)
     L = len(psdu)
     if ht:
         nbpsc, cr = HT[rate]
@@ -197,16 +203,16 @@ def build(ht, rate, sgi, mpdu, seed=0x7F, lsig_bits=None, htsig_bits=None, pad_m
     syms.append(np.tile(t, 3)[:160])                                   # L-STF
     ltf = np.fft.ifft(np.r_[L_LTF[26:], np.zeros(11), L_LTF[:26]]) * 64 / np.sqrt(52)
     syms.append(np.r_[ltf[-32:], ltf, ltf])                             # L-LTF
-    syms += field_symbols(lsig, 1, (1, 2), False, 1, 0, False)          # L-SIG
+    syms += field_symbols(lsig, 1, (1, 2), False, 1, 0, False, pol=pol)  # L-SIG
     pol0 = 1
     if ht:
         hs = [(rate >> i) & 1 for i in range(7)] + [0] + [(L >> i) & 1 for i in range(16)]
-        hs += [1, 1, 1, 0, 0, 0, 0, int(sgi), 0, 0]
+        hs += [1, 1, 1, int(bool(aggr)), 0, 0, 0, int(sgi), 0, 0]   # smoothing, not-sounding, rsvd, aggregation, STBC, FEC, SGI, Ness
         hs += ht_sig_crc(hs) + [0] * 6
         if htsig_bits is not None and htsig_bits != hs:
             print("WARN: DUT HT-SIG bits differ from standard encoding (using DUT bits)", file=sys.stderr)
             hs = htsig_bits
-        syms += field_symbols(hs, 1, (1, 2), False, 2, 1, False, qbpsk=True)  # HT-SIG1/2
+        syms += field_symbols(hs, 1, (1, 2), False, 2, 1, False, qbpsk=True, pol=pol)  # HT-SIG1/2
         syms.append(np.tile(t, 5)[:80])                                  # HT-STF
         hl = np.zeros(64, complex)
         for k in range(-28, 29):
@@ -228,7 +234,7 @@ def build(ht, rate, sgi, mpdu, seed=0x7F, lsig_bits=None, htsig_bits=None, pad_m
         # bits use the sequence 6 steps earlier than a standard transmitter would
         sc = scramble(bits[:tail0] + bits[tail0 + 6:], seed)
         sc = sc[:tail0] + [0] * 6 + sc[tail0:]
-    syms += field_symbols(sc, nbpsc, cr, ht, n_sym, pol0, ht, sgi=sgi and ht)
+    syms += field_symbols(sc, nbpsc, cr, ht, n_sym, pol0, ht, sgi=sgi and ht, pol=pol)
     return syms
 
 
@@ -270,7 +276,8 @@ def main():
         syms = build(p["ht"], p["rate"], p["sgi"], p["mpdu"], a.seed, p["lsig"], p["hsig"], a.pad)
     else:
         j = json.load(open(a.json))
-        syms = build(j["ht"], j["rate"], j.get("sgi", 0), bytes.fromhex(j["mpdu_hex"]), a.seed, pad_mode=a.pad)
+        syms = build(j["ht"], j["rate"], j.get("sgi", 0), bytes.fromhex(j["mpdu_hex"]), j.get("seed", a.seed),
+                     pad_mode=a.pad, aggr=j.get("aggr", 0), pilot_seed=j.get("pilot_seed", 0x7F))
     x = np.concatenate(syms)
     print(f"reference: {len(syms)} fields/symbols, {len(x)} samples @20Msps")
     if a.out:

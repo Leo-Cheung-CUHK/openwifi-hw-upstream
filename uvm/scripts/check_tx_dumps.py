@@ -27,11 +27,14 @@ def main():
     for fj in files:
         n = fj[-9:-5]
         j = json.load(open(fj))
-        syms = ref.build(j["ht"], j["rate"], j.get("sgi", 0), bytes.fromhex(j["mpdu_hex"]), pad_mode=a.pad)
+        syms = ref.build(j["ht"], j["rate"], j.get("sgi", 0), bytes.fromhex(j["mpdu_hex"]), j.get("seed", 0x7F),
+                         pad_mode=a.pad, aggr=j.get("aggr", 0), pilot_seed=j.get("pilot_seed", 0x7F))
         d = np.loadtxt(os.path.join(a.dir, f"rtl_{n}.txt"), ndmin=2)
         r = d[:, 0] + 1j * d[:, 1]
         x = np.concatenate(syms)
-        tag = f"{'HT-MCS%d' % j['rate'] if j['ht'] else '%dM' % j['rate']}{'-SGI' if j.get('sgi') else ''} len={len(j['mpdu_hex'])//2}"
+        tag = f"{'HT-MCS%d' % j['rate'] if j['ht'] else '%dM' % j['rate']}{'-SGI' if j.get('sgi') else ''}{'-AMPDU' if j.get('aggr') else ''} len={len(j['mpdu_hex'])//2}"
+        if j.get("seed", 0x7F) != 0x7F or j.get("pilot_seed", 0x7F) != 0x7F:
+            tag += f" seed=0x{j.get('seed', 0x7F):02x}/0x{j.get('pilot_seed', 0x7F):02x}"
         if len(r) != len(x):
             print(f"[{n}] FAIL {tag}: {len(r)} samples, reference {len(x)}"); bad += 1; continue
         worst, pos, worst_i = -999.0, 0, -1

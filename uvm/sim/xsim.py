@@ -298,7 +298,9 @@ def run_test(a, var, tools, tb, test, seed, plusargs, verb):
     os.makedirs(rdir, exist_ok=True)
     log = os.path.join(rdir, "sim.log")
     pa = ["-testplusarg", f"UVM_TESTNAME={test}", "-testplusarg", f"UVM_VERBOSITY={verb}"]
-    for p in plusargs:
+    # per-test defaults from sim/Makefile ARGS_<test> (e.g. the vector list), then the caller's
+    targs = var.get(f"ARGS_{test}", "").replace("$(BUILD)", fwd(a.build)).replace("$(OW_UVM)", fwd(OW_UVM))
+    for p in targs.split() + list(plusargs):
         pa += ["-testplusarg", p.lstrip("+")]
     ok = tools.run("xsim", [f"{d['top']}_snap", "-R", "-sv_seed", str(seed), "-log", fwd(log)] + pa,
                    work, argfile=f"xsim_{test}_{seed}.args")
@@ -348,10 +350,15 @@ def cmd_rxlists(a, var, tools):
     gen = os.path.join(a.build, "rxgen")
     if tools.dry:
         print("rxlists: gen_rx_vectors.py"); return 0
-    rc = py("gen_rx_vectors.py", "--out", gen, "-n", "50", "--snr", "30", "--cfo-hz", "20e3")
-    if rc == 0:
-        shutil.copy(os.path.join(gen, "list.txt"), os.path.join(lists, "rx_generated.list"))
-    return rc
+    for out, lst, args in (("rxgen", "rx_generated.list", ["-n", "50", "--snr", "30", "--cfo-hz", "20e3"]),
+                           ("rxclean", "rx_clean.list", ["-n", "24", "--seed", "7", "--max-len", "400"]),
+                           ("rxcraft", "rx_craft.list", ["--craft"])):       # same sets as `make rxlists`
+        d = os.path.join(a.build, out)
+        rc = py("gen_rx_vectors.py", "--out", d, *args)
+        if rc:
+            return rc
+        shutil.copy(os.path.join(d, "list.txt"), os.path.join(lists, lst))
+    return 0
 
 
 def main():
