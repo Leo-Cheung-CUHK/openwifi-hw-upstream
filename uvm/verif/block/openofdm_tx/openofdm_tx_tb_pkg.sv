@@ -163,8 +163,30 @@ package openofdm_tx_tb_pkg;
   class otx_rate_sweep_test extends otx_base_test;
     `uvm_component_utils(otx_rate_sweep_test)
     function new(string name, uvm_component parent); super.new(name, parent); endfunction
+    // +OTX_REPLAY=<dir>: take each frame's MPDU from <dir>/frame_NNNN.json (a TX_DUMP_DIR of an
+    // earlier run, e.g. vectors/otx_rate_sweep/fixed) instead of $urandom. Payload randomisation
+    // differs between simulators; with the same MPDUs the I/Q of xsim and Verilator must be
+    // bit-identical, which is the cross-simulator check (scripts/compare_golden.py).
+    function void replay_mpdu(wifi_frame f, string dir, int n);
+      string fn = $sformatf("%s/frame_%04d.json", dir, n), line = "", hex = "", key = "\"mpdu_hex\"";
+      int fd = $fopen(fn, "r"), p = -1;
+      if (!fd) `uvm_fatal("REPLAY", {"cannot open ", fn})
+      void'($fgets(line, fd)); $fclose(fd);
+      for (int i = 0; i + key.len() <= line.len(); i++)
+        if (line.substr(i, i + key.len() - 1) == key) begin p = i + key.len(); break; end
+      if (p < 0) `uvm_fatal("REPLAY", {"no mpdu_hex in ", fn})
+      while (p < line.len() && (line[p] == ":" || line[p] == " " || line[p] == "\"")) p++;   // : "
+      for (int i = p; i < line.len() && line[i] != "\""; i++) hex = {hex, string'(line[i])};
+      if (hex.len() / 2 != f.mpdu_len)
+        `uvm_fatal("REPLAY", $sformatf("%s: %0d bytes, frame expects %0d", fn, hex.len() / 2, f.mpdu_len))
+      f.mpdu = new[f.mpdu_len];
+      foreach (f.mpdu[k]) f.mpdu[k] = hex.substr(2 * k, 2 * k + 1).atohex();
+    endfunction
     task run_phase(uvm_phase phase);
       int unsigned lens[3] = '{14, 100, 1500};
+      string replay = ""; int n = 0;
+      void'($value$plusargs("OTX_REPLAY=%s", replay));
+      if (replay != "") `uvm_info("REPLAY", {"MPDUs from ", replay}, UVM_NONE)
       phase.raise_objection(this);
       init_regs();
       for (int h = 0; h < 2; h++)
@@ -174,6 +196,8 @@ package openofdm_tx_tb_pkg;
               wifi_frame f = wifi_frame::type_id::create("f");
               if (!f.randomize() with { ht == h; rate_hw == r; sgi == g; mpdu_len == lens[li]; })
                 `uvm_fatal("RAND", "randomize")
+              n++;
+              if (replay != "") replay_mpdu(f, replay, n);
               env.ptx.sqr.execute_item(f);
             end
       #10us;

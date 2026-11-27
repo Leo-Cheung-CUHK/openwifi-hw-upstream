@@ -65,7 +65,10 @@ s_otx() {   # openofdm_tx UVM regression in Verilator; rate_sweep dumps go to $O
   done
   [ $fail = 0 ] && python3 "$OW_UVM/scripts/check_tx_dumps.py" "$OUT/dumps"
 }
-same_as_golden() {   # same_as_golden <dir>: IQ captures bit-identical, and every field the golden
+same_as_golden() {   # same_as_golden <dir>: I/Q byte-identical, golden frame fields equal
+  python3 "$OW_UVM/scripts/compare_golden.py" "$1" --golden "$GOLDEN"
+}
+s_golden() {   # same_as_golden <dir>: IQ captures bit-identical, and every field the golden
   # frame_NNNN.json has (ht, rate, sgi, mpdu_hex) equal; fields added to the dumps later
   # (aggr, seed, pilot_seed, ...) are metadata and do not count as a difference
   python3 - "$GOLDEN" "$1" <<'PY'
