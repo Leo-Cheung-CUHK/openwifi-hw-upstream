@@ -41,8 +41,8 @@ hardware-in-the-loop), not a Palladium/Protium-class emulator.
 | S6 emulation | `[board]` | release, on demand | 1–4 h | §6 pass criteria |
 
 Runners: S0 runs on GitHub-hosted Linux runners or the cloud container (no licence needed). S1–S6 run on the
-self-hosted runner on the desktop (Vivado 2022.2, Viterbi evaluation licence), labels `vivado` and `board`
-(setup: [RUNNER.md](RUNNER.md)).
+self-hosted runner on the Windows desktop (native Vivado 2022.2, Viterbi evaluation licence), labels `vivado` and `board`
+(setup: [RUNNER.md](RUNNER.md); on Windows the xsim flow runs through `sim/xsim.py`).
 The board is reached over JTAG (bitstream, ILA) and Ethernet (ssh to the board's Linux).
 
 ---
@@ -63,7 +63,7 @@ locally: `UVM_SRC=<uvm-core>/src scripts/ci_s0.sh [steps…]`.
 
 ## 3. S1/S2 — RTL UVM on xsim
 
-Flow (already scripted, not yet run on xsim):
+Flow (already scripted, not yet run on xsim; on Windows use `python sim/xsim.py prep|xip|regress`):
 ```
 make prep OW_HW=$PWD/..                 # build/rtl copy + module renames
 make xip  SIM=xsim PART=<board part>    # Xilinx IP sim models for openofdm_rx (xfft, viterbi, cmult, div_gen)
@@ -185,7 +185,7 @@ in the regression.
 
 ## 7. Work items, in order
 
-1. ~~CI workflow for S0 (`.github/workflows/s0.yml`)~~ done. Self-hosted runner on the desktop with labels `vivado` and later `board`: setup in [RUNNER.md](RUNNER.md) §2.
+1. ~~CI workflow for S0 (`.github/workflows/s0.yml`)~~ done. Self-hosted runner on the Windows desktop (native Vivado, decided 2026-11-26) with labels `vivado` and later `board`: `sim/xsim.py` + `.github/workflows/s1.yml` done, runner setup in [RUNNER.md](RUNNER.md) §2 (to do on the desktop).
 2. S1 on xsim: `make xip`, openofdm_rx vectors, then tx_intf, rx_intf, xpu, side_ch bring-up.
 3. S2: chip tests on xsim, plus `chip_loopback_test` and the tx_intf `wifi_iq_ready` delay root cause.
 4. S3 on ZC706 (`zc706_fmcs2`): `s3_build.tcl`, gates, RTL manifest.

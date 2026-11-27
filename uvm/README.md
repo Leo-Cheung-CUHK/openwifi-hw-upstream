@@ -12,7 +12,8 @@ verif/chip/          chip TB: DUT + peer station (second openofdm_tx/rx) + score
 scripts/             gen_core_top.py, prep_rtl.py, wifi_ref_tx.py (802.11 reference TX),
                      gen_rx_vectors.py, check_tx_dumps.py, gen_xilinx_ip_sim.tcl, slang_lint.py,
                      ci_s0.sh (S0 gate, run by .github/workflows/s0.yml)
-sim/                 Makefile (xsim / questa / vcs / xcelium), gen_inc/ (FPGA-flow headers),
+sim/                 Makefile (xsim / questa / vcs / xcelium), xsim.py (xsim flow for Windows + Linux),
+                     gen_inc/ (FPGA-flow headers),
                      verilator_tx_smoke/ (no-licence PHY check + back-pressure repro)
 ```
 
@@ -27,6 +28,15 @@ make smoke                                         # Verilator, no licence
 make run   TB=openofdm_tx TEST=otx_rate_sweep_test SIM=xsim
 make xip   SIM=xsim                                # once, for openofdm_rx and chip (PART defaults to ZC706's xc7z045ffg900-2)
 make run   TB=chip TEST=chip_ack_test SIM=xsim
+```
+
+Windows (native Vivado, no make/bash): `uvm/sim/xsim.py` runs the same xsim flow, see
+[docs/RUNNER.md](docs/RUNNER.md) §2.3. Use a checkout path without spaces or `+`, e.g. `D:\ow`:
+```powershell
+python uvm\sim\xsim.py --vivado D:/Xilinx/Vivado/2022.2 env
+python uvm\sim\xsim.py prep
+python uvm\sim\xsim.py run --tb openofdm_tx --test otx_rate_sweep_test
+python uvm\sim\xsim.py xip ; python uvm\sim\xsim.py regress
 ```
 
 Built and checked against upstream `fa6c896` (the base of this branch), `ip/openofdm_rx` @ `2bb3ad1`.

@@ -1,0 +1,4 @@
+# keep shell scripts LF on Windows checkouts (core.autocrlf=true would break them in bash)
+*.sh  text eol=lf
+*.py  text eol=lf
+Makefile text eol=lf

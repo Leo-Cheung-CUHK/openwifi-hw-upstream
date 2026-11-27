@@ -1,0 +1,96 @@
+# S1 (uvm/docs/FLOW.md §3): block-level UVM on xsim, on the self-hosted Windows desktop runner
+# with the native Windows Vivado 2022.2. Setup: uvm/docs/RUNNER.md §2.
+# Manual trigger only for now (Actions -> S1 -> Run workflow). Never runs for pull requests:
+# a self-hosted runner on a public repository must not execute code from forks.
+name: S1 (xsim, Windows desktop)
+
+on:
+  workflow_dispatch:
+    inputs:
+      what:
+        description: 'env = check the runner; xip = (re)build Xilinx IP models; run = one test; regress = TBs x tests'
+        type: choice
+        options: [env, xip, run, regress]
+        default: env
+      tb:
+        description: 'TB(s), space separated (empty = all for regress, openofdm_tx for run)'
+        default: ''
+      test:
+        description: 'test for "run" (empty = first test of the TB)'
+        default: ''
+      plusargs:
+        description: 'extra plusargs, e.g. +N_PKT=50'
+        default: ''
+
+permissions:
+  contents: read
+
+jobs:
+  s1:
+    runs-on: [self-hosted, windows, vivado]
+    timeout-minutes: 480
+    defaults:
+      run:
+        shell: pwsh
+    env:
+      # Vivado root and a persistent build tree outside the checkout come from the runner's .env
+      # file (RUNNER.md §2.4): XILINX_VIVADO=D:\Xilinx\Vivado\2022.2, OW_BUILD=D:\owb
+      PYTHONUTF8: '1'
+    steps:
+      - run: git config --global core.longpaths true
+      - uses: actions/checkout@v4
+        with:
+          submodules: false
+      - name: openofdm_rx submodule
+        run: git submodule update --init --depth 1 ip/openofdm_rx
+
+      - name: Runner check
+        run: |
+          $b = if ($env:OW_BUILD) { $env:OW_BUILD } else { Join-Path $PWD 'uvm/build' }
+          "OW_BUILD_DIR=$b" >> $env:GITHUB_ENV
+          python uvm/sim/xsim.py env; exit $LASTEXITCODE
+
+      - name: Prepare RTL tree
+        if: inputs.what != 'env'
+        run: python uvm/sim/xsim.py prep
+
+      - name: Xilinx IP models
+        if: inputs.what != 'env'
+        run: |
+          # only openofdm_rx and chip use them; build when asked, or when one of those is about to run
+          $xip = Join-Path $env:OW_BUILD_DIR 'xip/xip_sources.txt'
+          $tbs = '${{ inputs.tb }}' -split '\s+' | Where-Object { $_ }
+          $needs = ('${{ inputs.what }}' -eq 'regress' -and (-not $tbs -or $tbs -match '^(openofdm_rx|chip)$')) -or
+                   ('${{ inputs.what }}' -eq 'run' -and $tbs -match '^(openofdm_rx|chip)$')
+          if ('${{ inputs.what }}' -eq 'xip' -or ($needs -and -not (Test-Path $xip))) {
+            python uvm/sim/xsim.py xip; exit $LASTEXITCODE
+          }
+          "Xilinx IP models: $(if (Test-Path $xip) { 'present' } else { 'not needed for this run' })"
+
+      - name: Run test
+        if: inputs.what == 'run'
+        run: |
+          $tb = '${{ inputs.tb }}'.Trim(); if (-not $tb) { $tb = 'openofdm_tx' }
+          $a = @('run', '--tb', $tb, '--plusargs', '${{ inputs.plusargs }}')
+          if ('${{ inputs.test }}') { $a += @('--test', '${{ inputs.test }}') }
+          python uvm/sim/xsim.py @a; exit $LASTEXITCODE
+
+      - name: Regression
+        if: inputs.what == 'regress'
+        run: |
+          $a = @('regress', '--plusargs', '${{ inputs.plusargs }}')
+          foreach ($t in ('${{ inputs.tb }}' -split '\s+' | Where-Object { $_ })) { $a += @('--tb', $t) }
+          python uvm/sim/xsim.py @a; exit $LASTEXITCODE
+
+      - name: Logs
+        if: always() && inputs.what != 'env'
+        uses: actions/upload-artifact@v4
+        with:
+          name: s1-logs
+          path: |
+            ${{ env.OW_BUILD_DIR }}/xsim/run/**/sim.log
+            ${{ env.OW_BUILD_DIR }}/xsim/*/*.log
+            ${{ env.OW_BUILD_DIR }}/xsim/regress.md
+            ${{ env.OW_BUILD_DIR }}/xip/xip.log
+          if-no-files-found: ignore
+          retention-days: 14

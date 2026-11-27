@@ -16,6 +16,11 @@ Usage: prep_rtl.py --hw <openwifi-hw> [--out build/rtl]
 """
 import argparse, collections, os, re, shutil
 
+
+def fwd(p):
+    """absolute path with forward slashes: valid in .f files for every simulator, Windows included"""
+    return os.path.abspath(p).replace(os.sep, "/")
+
 IPS = {
     "openofdm_rx": "ip/openofdm_rx/verilog",
     "openofdm_tx": "ip/openofdm_tx/src",
@@ -67,7 +72,7 @@ def main():
                 # RTL is Verilog-2005 (uses 'bit' as a port name etc.); keep SV keywords
                 # out of it even when the simulator compiles everything in SV mode.
                 t = '`begin_keywords "1364-2005"\n' + t + '\n`end_keywords\n'
-            open(os.path.join(dst, f), "w").write(t)
+            open(os.path.join(dst, f), "w", newline="\n").write(t)
         # board_def.v sits in ip/ and is copied into each IP by boards/ip_repo_gen.tcl
         shutil.copy(os.path.join(a.hw, "ip", "board_def.v"), dst)
         # copy LUT init files ($readmemh targets etc.)
@@ -75,18 +80,18 @@ def main():
             if f.endswith((".mif", ".coe", ".mem", ".hex")):
                 shutil.copy(os.path.join(src, f), dst)
         fl = os.path.join(a.out, f"{ip}.f")
-        with open(fl, "w") as fh:
-            fh.write(f"+incdir+{os.path.abspath(dst)}\n")
+        with open(fl, "w", newline="\n") as fh:
+            fh.write(f"+incdir+{fwd(dst)}\n")
             # `define-only include files first (some RTL relies on compile order for them)
             for f in copy_all[ip]:
                 if f not in files[ip]:
                     body = open(os.path.join(src, f), errors="ignore").read()
                     if "`define" in body and "localparam" not in body:
-                        fh.write(os.path.abspath(os.path.join(dst, f)) + "\n")
+                        fh.write(fwd(os.path.join(dst, f)) + "\n")
             for f in files[ip]:
-                fh.write(os.path.abspath(os.path.join(dst, f)) + "\n")
-        allf.append(f"-f {os.path.abspath(fl)}")
-    open(os.path.join(a.out, "all.f"), "w").write("\n".join(allf) + "\n")
+                fh.write(fwd(os.path.join(dst, f)) + "\n")
+        allf.append(f"-f {fwd(fl)}")
+    open(os.path.join(a.out, "all.f"), "w", newline="\n").write("\n".join(allf) + "\n")
     print("renamed shared modules:", ", ".join(sorted(shared)) or "none")
 
 

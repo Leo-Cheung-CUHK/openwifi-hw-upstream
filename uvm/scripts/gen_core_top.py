@@ -274,7 +274,7 @@ def main():
         L.append(",\n".join(pc))
         L.append("  );")
     L.append("endmodule")
-    open(a.out, "w").write("\n".join(L) + "\n")
+    open(a.out, "w", newline="\n").write("\n".join(L) + "\n")
     print(f"wrote {a.out}")
 
 

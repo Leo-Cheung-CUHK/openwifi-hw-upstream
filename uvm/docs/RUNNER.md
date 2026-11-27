@@ -5,8 +5,8 @@ Two kinds of runner (FLOW.md §1):
 | Stage | Runner | Labels | Needs |
 |---|---|---|---|
 | S0 | GitHub-hosted `ubuntu-24.04` (`.github/workflows/s0.yml`) | — | nothing; Verilator and uvm-core are built once and cached |
-| S1–S4 | self-hosted, on the desktop | `self-hosted`, `linux`, `vivado` | Vivado 2022.2, ZC706 device licence, Viterbi Decoder evaluation licence |
-| S5–S6 | the same desktop runner, or a small PC next to the board | `self-hosted`, `linux`, `board` | JTAG (hw_server) and Ethernet to the board |
+| S1–S4 | self-hosted, on the Windows desktop (`.github/workflows/s1.yml`) | `self-hosted`, `windows`, `vivado` | Windows Vivado 2022.2, ZC706 device licence, Viterbi Decoder evaluation licence, Python 3.10+, Git |
+| S5–S6 | the same desktop runner, or a small PC next to the board | `self-hosted`, `windows`, `board` | JTAG (hw_server) and Ethernet to the board |
 
 ## 1. S0 on GitHub-hosted runners
 
@@ -21,6 +21,7 @@ Steps of the gate (each prints PASS/FAIL, the table goes to the job summary):
 |---|---|---|
 | `prep` | `make prep` regenerates `rtl_wrap/openwifi_core_top.sv` from `system.bd` | no diff to the committed file |
 | `lint` | slang elaboration of all 7 TBs | 7/7 |
+| `xsimpy` | `sim/xsim.py` (the Windows xsim flow) against a fake Vivado: file lists equal the Makefile's for all 7 TBs, Xilinx IP grouping, compile-once, recompile on change | 0 failures |
 | `smoke` | Verilator openofdm_tx + `wifi_ref_tx.py` | 20/20 |
 | `backpressure` | FIFO-model and 12 periodic hold patterns × 4 frame types | 60/60 |
 | `otx` | openofdm_tx UVM regression in Verilator (reg_reset, rate_sweep, random, backpressure) + `check_tx_dumps.py` on the rate_sweep dumps | no UVM_ERROR/FATAL, no assertion failure, 72/72 EVM |
@@ -34,74 +35,91 @@ When the RTL changes on purpose (an openofdm_tx fix, a new upstream merge), the 
 by design: re-run `otx`, check the new captures with `check_tx_dumps.py` and `py_rx_decode.py`,
 then replace `vectors/otx_rate_sweep/fixed/` in the same commit and say why in the message.
 
-## 2. Self-hosted runner on the Windows desktop
+## 2. Self-hosted runner on the Windows desktop (native Windows Vivado)
 
-The scripts and the Makefile are bash/GNU make, so the runner should be a Linux environment.
-Recommended: **WSL2 Ubuntu 22.04 with the Linux build of Vivado 2022.2** inside it, and the
-JTAG cable served by `hw_server` on the Windows side. Alternatives are listed in §2.5.
+Decided 2026-11-26: the desktop runs the native Windows Vivado 2022.2, no WSL. On Windows the
+flow is driven by `uvm/sim/xsim.py` instead of `sim/Makefile` (no bash, make, sed or symlinks
+needed); it reads the TB table from the Makefile, so both stay in step, and S0 checks that on
+every push (`xsimpy`).
 
-### 2.1 WSL2
+### 2.1 Paths (read this first)
+
+| what | use | why |
+|---|---|---|
+| checkout | `D:\ow` | no spaces, no `+` (`D:\AI+Openwifi` breaks plusarg-style tools), short |
+| build tree | `D:\owb` (`OW_BUILD`) | short (Vivado-generated IP paths hit the 260-character limit), outside the checkout so CI's clean keeps the IP models |
+| runner | `D:\r` | its workspace is `D:\r\_work\openwifi-hw-upstream\openwifi-hw-upstream`, still short |
+| Vivado | `D:\Xilinx\Vivado\2022.2` (or `C:\Xilinx\...`) | installer default is fine; no spaces |
+
+Also: `git config --global core.longpaths true`, and enable Win32 long paths
+(`gpedit` → Computer Configuration → Administrative Templates → System → Filesystem →
+"Enable Win32 long paths", or the `LongPathsEnabled` registry value). Neither replaces short
+paths: Vivado itself does not use long-path APIs everywhere.
+
+### 2.2 Software
+
+1. **Vivado 2022.2** (Windows, ML Edition or Enterprise), devices: Zynq-7000 (and Zynq
+   UltraScale+ RFSoC later). Licences in the Vivado License Manager: the ZC706 device-locked
+   licence and the Viterbi Decoder evaluation licence.
+2. **Python 3.10+** from python.org, "Add python.exe to PATH" ticked; then
+   `python -m pip install numpy` (only the Python checkers need it).
+3. **Git for Windows**.
+4. Cable drivers are installed with Vivado (`hw_server` for S5/S6).
+
+### 2.3 First manual run
 
 ```powershell
-wsl --install -d Ubuntu-22.04
+git config --global core.longpaths true
+git clone -b uvm-verification https://github.com/Leo-Cheung-CUHK/openwifi-hw-upstream D:\ow
+cd D:\ow
+git submodule update --init --depth 1 ip/openofdm_rx
+$env:XILINX_VIVADO = 'D:\Xilinx\Vivado\2022.2'; $env:OW_BUILD = 'D:\owb'
+python uvm\sim\xsim.py env                                   # tools, licence env, path warnings
+python uvm\sim\xsim.py prep
+python uvm\sim\xsim.py run --tb openofdm_tx --test otx_reg_reset_test   # no Xilinx IP, no Viterbi licence
+python uvm\sim\xsim.py run --tb openofdm_tx --test otx_rate_sweep_test --plusargs "+TX_DUMP_DIR=D:/owb/dumps"
+python uvm\scripts\check_tx_dumps.py D:\owb\dumps            # 72/72 expected, as in Verilator
+python uvm\sim\xsim.py xip                                   # Xilinx IP models (Viterbi licence)
+python uvm\sim\xsim.py regress
 ```
-In `%UserProfile%\.wslconfig`: give WSL most of the RAM (Vivado implementation of the 7z045 wants
-16 GB or more) and enable mirrored networking so WSL reaches `hw_server` on `localhost`:
-```ini
-[wsl2]
-memory=24GB
-processors=8
-networkingMode=mirrored
+`openofdm_tx` is the TB already proven in Verilator, so it separates "xsim/Windows setup
+problem" from "TB bring-up problem": get it to PASS first. `--vivado D:/Xilinx/Vivado/2022.2`
+can replace `XILINX_VIVADO`. Logs: `D:\owb\xsim\run\<tb>_<test>_<seed>\sim.log`, compile logs
+in `D:\owb\xsim\<tb>\`.
+
+### 2.4 Register the runner
+
+GitHub → repository **Settings → Actions → Runners → New self-hosted runner → Windows / x64**.
+In PowerShell, run the download commands that page shows inside `D:\r`, then:
+```powershell
+cd D:\r
+.\config.cmd --url https://github.com/Leo-Cheung-CUHK/openwifi-hw-upstream --token <from that page> `
+             --name desktop --labels vivado --work _work --runasservice
 ```
-In Ubuntu, `/etc/wsl.conf` (so the runner can run as a systemd service):
-```ini
-[boot]
-systemd=true
+Environment for the jobs: create `D:\r\.env` with
 ```
-Then `wsl --shutdown` and reopen. Keep the checkout and the build tree in the Linux filesystem
-(`~/…`), not under `/mnt/d/…`: builds on `/mnt` are several times slower.
-
-### 2.2 Vivado 2022.2 inside WSL
-
-Install the Linux edition (2022.2 lists Ubuntu 22.04 as supported) into `/tools/Xilinx`, plus
-`sudo apt install libtinfo5 libncurses5 make git python3-pip`. Add the licences
-(`XILINXD_LICENSE_FILE` or the Vivado License Manager): the ZC706 device-locked licence and the
-Viterbi Decoder evaluation licence. Check:
-```bash
-source /tools/Xilinx/Vivado/2022.2/settings64.sh
-vivado -version
-cd openwifi-hw-upstream/uvm/sim && make xip SIM=xsim     # needs the Viterbi licence
+XILINX_VIVADO=D:\Xilinx\Vivado\2022.2
+OW_BUILD=D:\owb
+PYTHONUTF8=1
 ```
+and restart the service (`Restart-Service "actions.runner.*"`). If the service account cannot
+see your Python or the Vivado licence, change the service to log on as your user
+(services.msc → the runner service → Log On), or run `.\run.cmd` in a terminal instead.
+Add the `board` label later, once the ZC706 is attached.
 
-### 2.3 Register the runner
+Check: Actions → **S1 (xsim, Windows desktop)** → Run workflow → `what = env`. Then `run`
+(openofdm_tx), then `xip`, then `regress`.
 
-GitHub → repository **Settings → Actions → Runners → New self-hosted runner → Linux / x64**.
-Run the download and `config.sh` commands that page shows, inside WSL, with:
-```bash
-./config.sh --url https://github.com/Leo-Cheung-CUHK/openwifi-hw-upstream --token <from that page> \
-            --name desktop-wsl --labels vivado --work _work
-sudo ./svc.sh install && sudo ./svc.sh start
-```
-Add the `board` label later (Settings → Runners → the runner → labels) once the ZC706 is attached.
-The runner service needs Vivado on its PATH: put `source /tools/Xilinx/Vivado/2022.2/settings64.sh`
-in the job steps (S1+ workflows do this), not only in `~/.bashrc`.
-
-### 2.4 Security (public repository)
+### 2.5 Security (public repository)
 
 A self-hosted runner executes whatever a workflow tells it to, on the desktop. This repository is
 public, so:
-* S1–S6 workflows run on `push` to your own branches, `schedule` and `workflow_dispatch` only —
-  never on `pull_request` from forks;
+* `s1.yml` runs on `workflow_dispatch` only; later stages add `schedule`, never `pull_request`;
 * Settings → Actions → General: "Require approval for all external contributors";
-* run the service as a normal user without sudo rights it does not need.
+* the runner service account should not be an administrator.
 
-### 2.5 JTAG and alternatives
+### 2.6 What is not verified yet
 
-* **hw_server on Windows (recommended).** Install the Vivado Lab Edition (or the cable drivers) on
-  Windows, run `hw_server`; Vivado in WSL connects with `open_hw_target -url localhost:3121` thanks
-  to mirrored networking. No USB passthrough needed.
-* USB passthrough with `usbipd-win` into WSL, hw_server inside WSL. Works, but the cable has to be
-  re-attached after every replug or reboot.
-* Native Windows Vivado + runner on Windows with Git Bash/MSYS2 make. Possible, but `Makefile`,
-  `xip_compile.sh` and the smoke scripts would need porting; not recommended.
-* Open decision (FLOW.md §7): a separate small PC next to the board as the `board` runner.
+`xsim.py` is tested in S0 against a fake Vivado (file lists, order, grouping, caching). The real
+tools' behaviour on Windows (option spelling in `-f` files, `.bat` exit codes, licence checkout,
+`export_simulation` paths) is checked by the first run of §2.3. Expect to fix small things there.
