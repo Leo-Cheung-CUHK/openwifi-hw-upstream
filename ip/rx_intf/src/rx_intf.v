@@ -206,6 +206,7 @@ module rx_intf #
   //wire fcs_invalid_from_acc_delay;
   wire m_axis_auto_rst;
   wire m_axis_rst;
+  wire m_axis_flush;
   wire enable_m_axis_auto_rst;
   
   wire ant_flag_in_rf_domain;
@@ -464,6 +465,7 @@ module rx_intf #
     .m_axis_tlast_auto_recover(m00_axis_tlast_auto_recover),
     .m_axis_tvalid(m00_axis_tvalid_inner),
     .m_axis_tready(m00_axis_tready),
+    .m_axis_flush(m_axis_flush),
 
     // port to xilinx axi dma
     .s2mm_intr(s2mm_intr),
@@ -508,7 +510,8 @@ module rx_intf #
     .MAX_BIT_NUM_DMA_SYMBOL(MAX_BIT_NUM_DMA_SYMBOL)
   ) rx_intf_m_axis_i (
     .M_AXIS_ACLK(m00_axis_aclk),
-    .M_AXIS_ARESETN( m00_axis_aresetn&(~slv_reg0[4])&(~m_axis_auto_rst) ),
+    // uvm finding I: flush from the cycle the fake TLAST beat is taken (no extra beat slips out)
+    .M_AXIS_ARESETN( m00_axis_aresetn&(~slv_reg0[4])&(~m_axis_auto_rst)&(~m_axis_flush)&(~(m00_axis_tlast_auto_recover&m00_axis_tvalid_inner&m00_axis_tready)) ),
     .M_AXIS_TVALID(m00_axis_tvalid_inner),
     .M_AXIS_TDATA(m00_axis_tdata_inner),
     .M_AXIS_TSTRB(m00_axis_tstrb_inner),

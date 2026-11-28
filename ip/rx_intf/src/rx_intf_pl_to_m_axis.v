@@ -42,6 +42,7 @@
       output reg  m_axis_tlast_auto_recover,
       input  wire m_axis_tvalid,   // uvm finding I: the fake TLAST is held until a beat carries it
       input  wire m_axis_tready,
+      output reg  m_axis_flush,    // fake TLAST taken: reset M_AXIS to drop the rest of the packet
 
 	    // port to xilinx axi dma
 	    input wire s2mm_intr,
@@ -170,6 +171,7 @@
           monitor_num_dma_symbol_to_ps<=0;
           m_axis_rst<=0;
           m_axis_tlast_auto_recover<=0;
+          m_axis_flush<=0;
           data_to_m_axis <= 0;
           data_ready_to_m_axis <= 0;
           start_m_axis <= 0;
@@ -282,6 +284,7 @@
             // still does not take it within another timeout, reset as before
             if ( (m_axis_tvalid && m_axis_tready) || (!m_axis_tvalid) || (timeout_timer_1M>m_axis_tlast_auto_recover_timeout_top) ) begin
               m_axis_tlast_auto_recover<=0;
+              m_axis_flush<=(m_axis_tvalid && m_axis_tready); // the DMA ended the transfer: the rest is stale
               m_axis_rst<=1;
               rx_state <= WAIT_RST_DONE;
             end else begin
@@ -299,6 +302,7 @@
             monitor_num_dma_symbol_to_ps<=0;
             if (rst_count==7) begin
               m_axis_rst<=0;
+              m_axis_flush<=0;
               rx_state <= WAIT_FOR_PKT;
             end else begin
               m_axis_rst<=m_axis_rst;
