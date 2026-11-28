@@ -118,6 +118,11 @@ terminal: `gh workflow run s1.yml --ref uvm-verification -f what=env` (this also
 on the default branch the first time GitHub registers it). Changing the default branch is the
 simple option for this fork.
 
+**Done on the desktop (2026-11-28):** registered as `desktop` (labels self-hosted, windows, x64,
+vivado) by `runner_setup.cmd` in `D:\AI_Openwifi`; runner dir `D:\AI_Openwifi\r`, build tree
+`D:\AI_Openwifi\build` (`.env` also puts Anaconda first on PATH). It runs `run.cmd` in a console
+window (not as a service). Left: default branch → `uvm-verification`.
+
 ### 2.5 Security (public repository)
 
 A self-hosted runner executes whatever a workflow tells it to, on the desktop. This repository is
