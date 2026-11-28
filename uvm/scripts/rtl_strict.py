@@ -3,7 +3,9 @@
 rtl_strict.py - elaborate the prepared RTL of every IP with slang WITHOUT the
 use-before-declare allowance that slang_lint.py needs for UVM. Vivado synthesis accepts
 signals used before their declaration; xvlog in SV mode (and other simulators) reject them,
-which is how dot11_tx.v failed the first Windows xsim run. S0 step `rtlstrict`.
+which is how dot11_tx.v failed the first Windows xsim run. Also fails on a narrower expression
+connected to a wider input port (PortWidthExpand): xsim leaves the extra port bits undriven (Z),
+which made tx_intf's S_AXIS_TREADY X. S0 step `rtlstrict`.
 
   python3 uvm/scripts/rtl_strict.py [--rtl uvm/build/rtl]      (run `make prep` / `xsim.py prep` first)
 """
@@ -11,6 +13,8 @@ import argparse, os, sys
 import pyslang
 
 IPS = ["openofdm_tx", "openofdm_rx", "tx_intf", "rx_intf", "xpu", "side_ch"]
+# (file, port) widenings that live in a submodule repo and are handled elsewhere
+KNOWN_WIDEN = {("openofdm_rx.v", "min_signal_len_th")}   # 4-bit field on a 16-bit port; openofdm_rx submodule
 HERE = os.path.dirname(os.path.abspath(__file__))
 OW_UVM = os.path.dirname(HERE)
 
@@ -31,8 +35,17 @@ def main():
                f"-I {os.path.join(OW_UVM, '..', 'ip')} " + " ".join(files))
         d.parseCommandLine(cmd, pyslang.driver.CommandLineOptions()); d.processOptions(); d.parseAllSources()
         comp = d.createCompilation(); sm = comp.sourceManager
-        errs = sorted({(os.path.basename(sm.getFileName(x.location)), sm.getLineNumber(x.location), str(x.code))
-                       for x in comp.getAllDiagnostics() if x.isError()})
+        errs = set()
+        for x in comp.getAllDiagnostics():
+            f, ln, code = os.path.basename(sm.getFileName(x.location)), sm.getLineNumber(x.location), str(x.code)
+            if x.isError():
+                errs.add((f, ln, code))
+            elif "PortWidthExpand" in code:
+                line = open(sm.getFileName(x.location), errors="replace").read().split("\n")[ln - 1]
+                port = line.strip().lstrip(".").split("(")[0]
+                if (f, port) not in KNOWN_WIDEN:
+                    errs.add((f, ln, code + " ." + port))
+        errs = sorted(errs)
         print(f"{ip:12s} {'PASS' if not errs else 'FAIL'} ({len(files)} files)")
         for f, ln, code in errs:
             print(f"    {f}:{ln} {code.replace('DiagCode(', '').rstrip(')')}")

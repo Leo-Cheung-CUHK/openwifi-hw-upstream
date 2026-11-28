@@ -172,6 +172,11 @@ module tx_intf #
   wire [(C_S00_AXI_DATA_WIDTH-1):0] slv_reg6; // 
   wire [(C_S00_AXI_DATA_WIDTH-1):0] slv_reg7; // TX arbitrary I/Q control
   wire [(C_S00_AXI_DATA_WIDTH-1):0] slv_reg8; 
+  // Port-width-exact copies of narrower register fields. A narrower expression on a wider input port
+  // leaves the extra port bits undriven (Z) in xsim (Verilator/synthesis zero-extend), which turned
+  // S_AXIS_TREADY into X and hung the DMA path in simulation.
+  wire [MAX_BIT_NUM_DMA_SYMBOL-1:0] num_dma_symbol_raw = slv_reg8[12:0];
+  wire [2:0] tx_queue_idx_indication_3b = {1'b0, slv_reg8[19:18]};
   wire [(C_S00_AXI_DATA_WIDTH-1):0] slv_reg9; // 
   wire [(C_S00_AXI_DATA_WIDTH-1):0] slv_reg10; 
   wire [(C_S00_AXI_DATA_WIDTH-1):0] slv_reg11; // 
@@ -421,7 +426,7 @@ module tx_intf #
 		.S_AXIS_TSTRB(s00_axis_tstrb),
 		.S_AXIS_TLAST(s00_axis_tlast),
 		.S_AXIS_TVALID(s00_axis_tvalid),
-		.S_AXIS_NUM_DMA_SYMBOL_raw(slv_reg8[12:0]),
+		.S_AXIS_NUM_DMA_SYMBOL_raw(num_dma_symbol_raw),
 		
 		.s_axis_recv_data_from_high(s_axis_recv_data_from_high),
 		
@@ -474,7 +479,7 @@ module tx_intf #
     .auto_start_mode(phy_tx_auto_start_mode),
     .num_dma_symbol_th(phy_tx_auto_start_num_dma_symbol_th),
     .tx_config(slv_reg8),
-    .tx_queue_idx_indication_from_ps(slv_reg8[19:18]),
+    .tx_queue_idx_indication_from_ps(tx_queue_idx_indication_3b),
     .phy_hdr_config(slv_reg17),
     .ampdu_action_config(slv_reg15),
     .s_axis_recv_data_from_high(s_axis_recv_data_from_high),
