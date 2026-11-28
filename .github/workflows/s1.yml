@@ -93,15 +93,9 @@ jobs:
         if: env.WHAT == 'regress'
         run: |
           # a push to s1/** may carry uvm/sim/s1_push_args.txt: one xsim.py command per line
-          # (e.g. "--vit sova run --tb openofdm_rx --test orx_vectors_test --plusargs +VIT_TRACE")
-          $f = 'uvm/sim/s1_push_args.txt'
-          if ('${{ github.event_name }}' -eq 'push' -and (Test-Path $f)) {
-            $rc = 0
-            foreach ($l in (Get-Content $f | Where-Object { $_ -match '\S' -and $_ -notmatch '^\s*#' })) {
-              $a = $l.Trim() -split '\s+'
-              "== xsim.py $l"; python uvm/sim/xsim.py @a; if ($LASTEXITCODE) { $rc = $LASTEXITCODE }
-            }
-            exit $rc
+          # (e.g. --vit sova run --tb openofdm_rx --plusargs "+VIT_TRACE +RX_VEC=$(OW_HW)/...")
+          if ('${{ github.event_name }}' -eq 'push' -and (Test-Path uvm/sim/s1_push_args.txt)) {
+            python uvm/scripts/s1_push.py uvm/sim/s1_push_args.txt; exit $LASTEXITCODE
           }
           $a = @('regress', '--jobs', $env:JOBS)
           if ('${{ inputs.plusargs }}') { $a += @('--plusargs', '${{ inputs.plusargs }}') }
