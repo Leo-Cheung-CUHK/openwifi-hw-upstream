@@ -69,7 +69,7 @@ make prep OW_HW=$PWD/..                 # build/rtl copy + module renames
 make xip  SIM=xsim PART=<board part>    # Xilinx IP sim models for openofdm_rx (xfft, viterbi, cmult, div_gen)
 make regress SIM=xsim                   # all TBs x default tests
 ```
-Status 2026-11-27: tx_intf, rx_intf, xpu and side_ch already run in Verilator in the cloud with the
+Status 2026-11-28: all six block TBs run on xsim (STATUS.md §2). Before that, 2026-11-27: tx_intf, rx_intf, xpu and side_ch already ran in Verilator in the cloud with the
 behavioural XPM models (`scripts/run_block_vlt.sh <tb>`): 24/25 pass, `txi_cts_toself_test` fails on
 RTL bug E/F (ARCHITECTURE.md §8). That TB bring-up (timeouts, responder timing, side_ch pull mode,
 init sequences) is done, so on xsim the work left is: openofdm_rx with the Xilinx IP models
@@ -191,8 +191,10 @@ in the regression.
 
 ## 7. Work items, in order
 
-1. ~~CI workflow for S0 (`.github/workflows/s0.yml`)~~ done. Self-hosted runner on the Windows desktop (native Vivado, decided 2026-11-26) with labels `vivado` and later `board`: `sim/xsim.py` + `.github/workflows/s1.yml` done, runner setup in [RUNNER.md](RUNNER.md) §2 (to do on the desktop).
-2. S1 on xsim: `make xip`, openofdm_rx vectors (ORX-01..08); re-run tx_intf, rx_intf, xpu, side_ch on real XPM (already passing in Verilator). Decide RTL fixes for E/F (tx_intf CTS-to-self) and I/J (rx_intf recovery/reset).
+Current status of every item: [STATUS.md](STATUS.md).
+
+1. ~~CI workflow for S0 (`.github/workflows/s0.yml`)~~ done. ~~Self-hosted runner on the Windows desktop~~ registered 2026-11-28 (`desktop`, label `vivado`; `board` later). Left: make `uvm-verification` the default branch so `s1.yml` can be started from the Actions page.
+2. S1 on xsim: ~~`make xip`, openofdm_rx vectors~~, ~~block set on real XPM~~, ~~RTL fixes E/F, I/J (and K, L found on xsim)~~ done 2026-11-28; left: final full regression and coverage closure (§3).
 3. S2: chip tests on xsim, plus `chip_loopback_test` and the tx_intf `wifi_iq_ready` delay root cause.
 4. S3 on ZC706 (`zc706_fmcs2`): `s3_build.tcl`, gates, RTL manifest.
 5. S4a BD-level smoke with AXI VIP; S4b funcsim of the S2 smoke set.

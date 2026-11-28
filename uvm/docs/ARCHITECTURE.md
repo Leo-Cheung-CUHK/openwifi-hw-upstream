@@ -391,7 +391,10 @@ rx_intf/chip TBs tied the DMA `s2mm_intr` to 0; side_ch tests assumed records ar
 | rx_intf | 5 | 5 pass (H/I/J reported as notes) |
 | xpu | 9 | 9 pass with fix G (blkack fails on upstream) |
 | side_ch | 4 | 4 pass |
-| openofdm_rx, chip | 8 + 13 | lint only — need the Xilinx IP models (xsim) |
+| openofdm_rx, chip | 6 + 12 | lint only — need the Xilinx IP models (xsim) |
+
+On xsim (Windows Vivado 2022.2, 2026-11-28) all six block TBs run, openofdm_rx included; per-test
+results in [STATUS.md](STATUS.md) §2.
 
 Testbench bugs fixed while bringing this up: payload randomisation moved to
 `post_randomize()` (no dynamic-array size constraints), 16 µs interframe gap in the BRAM
@@ -439,12 +442,10 @@ Checked here:
   offset and the K_MOD/pilot scaling were corrected because of it).
 * HT-SIG CRC model == RTL vector; gen_rx_vectors / check_tx_dumps run end-to-end.
 
-Not yet run (no Vivado in this environment):
-* openofdm_rx and chip UVM simulation (xsim + Xilinx IP models); block TBs again on xsim with the
-  real XPM library.
-* `gen_xilinx_ip_sim.tcl` (needs Vivado 2022.2 + Viterbi licence).
+Since then (2026-11-28, Windows desktop with Vivado 2022.2): openofdm_rx simulated on xsim with
+the Xilinx IP models (`gen_xilinx_ip_sim.tcl` works with the Viterbi evaluation licence), the
+block set re-run on the real XPM library, RTL fixes E/F, I/J, K, L made and verified (the
+1-symbol HT suspicion is closed by K). Not yet run: chip on xsim.
 
-Next steps, in order: (1) `make xip` + `openofdm_rx` ORX-01..08 on xsim (incl. the 1-symbol HT
-suspicion); (2) the block set again on xsim with the real XPM library; (3) chip tests CHP-01..14;
-(4) decide RTL fixes for E/F (tx_intf CTS-to-self) and I/J (rx_intf recovery/reset); (5) coverage
-closure (rate × length × GI, CSMA states, filter flags, queue × priority); (6) RFSoC adapter TB.
+Next steps, in order (kept current in [STATUS.md](STATUS.md) §6): (1) coverage closure;
+(2) chip tests CHP on xsim; (3) RFSoC adapter TB.

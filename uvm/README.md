@@ -42,6 +42,7 @@ python uvm\sim\xsim.py xip ; python uvm\sim\xsim.py regress
 Built and checked against upstream `fa6c896` (the base of this branch), `ip/openofdm_rx` @ `2bb3ad1`.
 After merging newer upstream RTL, re-run `make prep` and commit the regenerated `rtl_wrap/openwifi_core_top.sv`.
 
-Status: all TBs elaborate cleanly (slang + UVM). The openofdm_tx UVM regression passes in Verilator
-after fixing RTL bugs A–D. Its captures decode with openofdm's Python receiver. The other TBs need
-xsim with the Xilinx IP models (see ARCHITECTURE.md §9 and FLOW.md).
+Status (2026-11-28): S0 CI runs on every push. All six block TBs run on Windows Vivado 2022.2 xsim
+(openofdm_rx with the Xilinx IP models); RTL findings A–L are fixed on this branch (K in the sim
+copy of the openofdm_rx submodule, with an upstream patch). The chip TB (S2) is next. Full,
+current status: [docs/STATUS.md](docs/STATUS.md).
