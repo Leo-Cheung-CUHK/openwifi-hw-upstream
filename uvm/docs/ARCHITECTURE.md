@@ -331,6 +331,12 @@ Still to check: the `openofdm_rx` RTL decoder's view of bug A (the Python receiv
    interfaces' assertions are fine. The five AXI-Lite stability checks are now written out per
    channel (same checks). Also seen: xelab can print `ERROR:` and still exit 0, so `xsim.py`
    judges a step by the log, not only the exit code.
+9. **xsim 2022.2 hangs elaborating a part-select of an `int` loop variable passed as a task
+   argument inside `fork`.** `xpu_csma_test` called `env.rsp.send(rand_frame(), q[1:0], ...)` in a
+   `fork` within `for (int q ...) repeat (4) begin` that also declares block-local variables;
+   xelab sat at "Compiling package work.xpu_tb_pkg" indefinitely (other TBs: ~60 s). Bisected on
+   the desktop by compiling variants in parallel: either `2'(q)` or hoisting the block-local
+   declarations fixes it. Now `2'(q)` (same value).
 
 ### Findings from the block TBs in Verilator (2026-11-27)
 

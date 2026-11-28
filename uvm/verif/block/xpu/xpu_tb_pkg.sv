@@ -359,7 +359,7 @@ package xpu_tb_pkg;
           begin rx(busy); t_end = $time; end         // demod_is_ongoing falls here
           begin
             #60us;
-            env.rsp.send(rand_frame(), q[1:0], 0, 0, r);
+            env.rsp.send(rand_frame(), 2'(q), 0, 0, r);   // 2'(q), not q[1:0]: xelab 2022.2 hangs on the part-select (finding 9)
           end
         join
         if (r.t_backoff_done[0] < t_end) `uvm_error("CSMA", $sformatf("queue %0d: backoff_done while a frame was being received", q))
