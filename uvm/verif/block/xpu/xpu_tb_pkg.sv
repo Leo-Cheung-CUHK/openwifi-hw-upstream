@@ -91,19 +91,22 @@ package xpu_tb_pkg;
     task send(wifi_frame f, bit [1:0] q, bit need_ack, bit [3:0] retrans_limit, output host_tx_result r,
               input real timeout_us = 20000);
       bit done = 0;
-      r = host_tx_result::type_id::create("r");
+      // fields are written through a local handle: Verilator 5.054 rejects writes to an output
+      // argument after a timing control (IEEE 1800-2023 13.2.2), the handle itself is set here
+      host_tx_result rr = host_tx_result::type_id::create("r");
+      r = rr;
       vif.tx_queue_idx <= q; vif.tx_pkt_need_ack <= need_ack; vif.tx_pkt_retrans_limit <= retrans_limit;
       @(posedge vif.clk iff vif.slice_en[q]);
-      r.t_trigger = $time;
+      rr.t_trigger = $time;
       vif.high_trigger <= 1; @(posedge vif.clk) vif.high_trigger <= 0;
       fork
         begin
           // first attempt after backoff_done; then one more per start_retrans
           @(posedge vif.clk iff vif.backoff_done);
           forever begin
-            r.t_backoff_done.push_back($time); r.cw.push_back(vif.cw); r.nsr.push_back(vif.num_slot_random);
+            rr.t_backoff_done.push_back($time); rr.cw.push_back(vif.cw); rr.nsr.push_back(vif.num_slot_random);
             phy.get(); play(f.airtime_us()); phy.put();
-            r.attempts++; r.t_tx_done.push_back($time); t_last_tx_done = $time; ->tx_done_ev;
+            rr.attempts++; rr.t_tx_done.push_back($time); t_last_tx_done = $time; ->tx_done_ev;
             @(posedge vif.clk iff (vif.start_retrans || vif.tx_try_complete));
             if (vif.tx_try_complete) break;
           end
@@ -114,7 +117,7 @@ package xpu_tb_pkg;
       disable fork;
       vif.tx_pkt_need_ack <= 0;
       repeat (5) @(posedge vif.clk);
-      r.num_retrans = vif.tx_status[3:0];   // tx_status settles after tx_try_complete
+      rr.num_retrans = vif.tx_status[3:0];   // tx_status settles after tx_try_complete
     endtask
   endclass
 
@@ -374,6 +377,23 @@ package xpu_tb_pkg;
         else `uvm_info("CSMA", $sformatf("queue %0d: %.2f us after busy end (%0d slots, cw %0d)", q, dt, r.nsr[0], r.cw[0]), UVM_LOW)
         #100us;
       end
+      // (4) medium busy again during the backoff count-down: RUN -> SUSPEND -> RUN, done only
+      // after the second busy period (queue 3, cw_min 5: up to 31 slots)
+      repeat (6) begin
+        wifi_frame busy = mk(16'h0008, 0, 48'h99_00_00_00_00_02, peer, peer, 300);
+        time t_end2;
+        fork
+          begin
+            rx(busy);
+            #((difs_us + 2.5 * slot_us) * 1us);      // inside the slot count-down
+            rx(busy); t_end2 = $time;
+          end
+          begin #60us; env.rsp.send(rand_frame(), 2'd3, 0, 0, r); end
+        join
+        if (r.nsr[0] >= 4 && r.t_backoff_done[0] < t_end2)
+          `uvm_error("CSMA", $sformatf("backoff of %0d slots done during the second busy period (no suspend)", r.nsr[0]))
+        #100us;
+      end
       phase.drop_objection(this);
     endtask
     function wifi_frame rand_frame(); return mk(16'h0008, 0, peer, my_mac, peer, $urandom_range(200, 40), 6); endfunction
@@ -414,6 +434,13 @@ package xpu_tb_pkg;
       // (d)
       fork env.rsp.send(f, 0, 1, 1, r); peer_ack(120); join
       if (r.attempts != 2) `uvm_error("RETX", $sformatf("late ACK: %0d attempts (expected the late ACK to count as missing)", r.attempts))
+      #200us;
+      // (e) ACKed frame on queues 1..3 (coverage xpu_tx_queue q*_ack1)
+      for (int q = 1; q < 4; q++) begin
+        fork env.rsp.send(f, 2'(q), 1, 3, r); peer_ack(); join      // 2'(q): finding 9
+        if (r.attempts != 1 || r.num_retrans != 0) `uvm_error("RETX", $sformatf("queue %0d ACKed frame: %0d attempts, num_retrans %0d", q, r.attempts, r.num_retrans))
+        #200us;
+      end
       phase.drop_objection(this);
     endtask
   endclass
@@ -476,6 +503,7 @@ package xpu_tb_pkg;
       fr.push_back(mk(16'h0040, 0, 48'hFF_FF_FF_FF_FF_FF, peer, 48'hFF_FF_FF_FF_FF_FF, 60)); // probe request
       fr.push_back(mk(16'h0050, 0, my_mac, bssid_other, bssid_other, 80));   // probe response
       fr.push_back(mk(16'h00B4, 300, 48'h07_00_00_00_00_02, peer, 0, 16));   // RTS, not for me
+      fr.push_back(mk(16'h00B4, 300, my_mac, peer, 0, 16));                   // RTS to me (FILTER CONTROL)
       fr.push_back(mk(16'h00A4, 0, bssid_me, peer, 0, 16));                   // PS-Poll
       fr.push_back(mk(16'h00D4, 0, 48'h07_00_00_00_00_02, 0, 0, 10));         // ACK, not for me
       foreach (cfgs[c]) begin
