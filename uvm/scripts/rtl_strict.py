@@ -14,7 +14,7 @@ import pyslang
 
 IPS = ["openofdm_tx", "openofdm_rx", "tx_intf", "rx_intf", "xpu", "side_ch"]
 # (file, port) widenings that live in a submodule repo and are handled elsewhere
-KNOWN_WIDEN = {("openofdm_rx.v", "min_signal_len_th")}   # 4-bit field on a 16-bit port; openofdm_rx submodule
+KNOWN_WIDEN = set()   # openofdm_rx min_signal_len_th is patched in the sim copy (prep_rtl.py SIM_PATCHES)
 HERE = os.path.dirname(os.path.abspath(__file__))
 OW_UVM = os.path.dirname(HERE)
 

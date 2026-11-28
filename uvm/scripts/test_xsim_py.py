@@ -145,6 +145,13 @@ def main():
     rc, out = xsim("regress")
     check(rc == 0 and not [c for c in log() if c["tool"] != "xsim"], "second regress reuses all 7 compiled models")
 
+    # parallel tests: same runs, one wdb per run dir
+    open(calls, "w").close()
+    rc, out = xsim("regress", "--jobs", "4")
+    sims = [c for c in log() if c["tool"] == "xsim"]
+    check(rc == 0 and len(sims) == n_tests and not [c for c in log() if c["tool"] != "xsim"],
+          f"regress --jobs 4: {n_tests} runs, no recompile (got {len(sims)})")
+
     # touching one TB source recompiles that TB only
     src = os.path.join(OW_UVM, "verif", "block", "xpu", "tb_xpu.sv")
     st = os.stat(src); open(calls, "w").close()

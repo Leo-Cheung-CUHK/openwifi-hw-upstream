@@ -24,7 +24,7 @@ file, which avoids cmd.exe's 8191-character limit and its handling of '=' and '+
 Each TB compiles once into build/xsim/<tb>/ and is reused while its sources are unchanged;
 logs of every run go to build/xsim/run/<tb>_<test>_<seed>/.
 """
-import argparse, glob, os, re, shutil, subprocess, sys, time
+import argparse, concurrent.futures, glob, os, re, shutil, subprocess, sys, time
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 OW_UVM = os.path.dirname(HERE)
@@ -302,7 +302,9 @@ def run_test(a, var, tools, tb, test, seed, plusargs, verb):
     targs = var.get(f"ARGS_{test}", "").replace("$(BUILD)", fwd(a.build)).replace("$(OW_UVM)", fwd(OW_UVM))
     for p in targs.split() + list(plusargs):
         pa += ["-testplusarg", p.lstrip("+")]
-    ok = tools.run("xsim", [f"{d['top']}_snap", "-R", "-sv_seed", str(seed), "-log", fwd(log)] + pa,
+    # waveform database per run dir, so tests of one TB can run in parallel (regress --jobs)
+    ok = tools.run("xsim", [f"{d['top']}_snap", "-R", "-sv_seed", str(seed), "-log", fwd(log),
+                            "-wdb", fwd(os.path.join(rdir, "sim.wdb"))] + pa,
                    work, argfile=f"xsim_{test}_{seed}.args")
     if tools.dry:
         return "DRY", log
@@ -322,13 +324,26 @@ def cmd_run(a, var, tools):
 def cmd_regress(a, var, tools):
     t = tb_table(var)
     rows, fail = [], 0
+    def one(tb, test):
+        t0 = time.time()
+        st, log = run_test(a, var, tools, tb, test, a.seed, a.plusargs.split(), a.verb)
+        return (tb, test, st, int(time.time() - t0), log)
     for tb in a.tb or TBS:
-        for test in t[tb]["tests"]:
-            t0 = time.time()
-            st, log = run_test(a, var, tools, tb, test, a.seed, a.plusargs.split(), a.verb)
-            rows.append((tb, test, st, int(time.time() - t0), log))
-            fail |= st not in ("PASS", "DRY")
-            if st == "COMPILE-FAIL":
+        tests = t[tb]["tests"]
+        if a.jobs > 1:
+            # compile once, then the tests side by side (each has its own run dir, log and wdb)
+            if not compile_tb(a, var, tools, tb, t[tb]):
+                rows.append((tb, tests[0], "COMPILE-FAIL", 0, None)); fail = 1; continue
+            with concurrent.futures.ThreadPoolExecutor(a.jobs) as ex:
+                res = list(ex.map(lambda x: one(tb, x), tests))
+            rows += res
+            fail |= any(r[2] not in ("PASS", "DRY") for r in res)
+            continue
+        for test in tests:
+            r = one(tb, test)
+            rows.append(r)
+            fail |= r[2] not in ("PASS", "DRY")
+            if r[2] == "COMPILE-FAIL":
                 break                       # the other tests of this TB would fail the same way
     os.makedirs(os.path.join(a.build, "xsim"), exist_ok=True)
     md = ["| tb | test | result | time | log |", "|---|---|---|---|---|"] + \
@@ -380,6 +395,7 @@ def main():
         p.add_argument("--tb", action="append", help="TB name (repeat for regress)")
         p.add_argument("--test"); p.add_argument("--seed", type=int, default=1)
         p.add_argument("--verb", default="UVM_MEDIUM"); p.add_argument("--plusargs", default="")
+        p.add_argument("--jobs", type=int, default=1, help="regress: tests of a TB run in parallel")
     a = ap.parse_args()
     a.hw = fwd(a.hw); a.build = os.path.abspath(a.build)
     tools = Tools(a)

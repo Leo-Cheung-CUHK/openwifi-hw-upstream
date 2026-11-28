@@ -29,6 +29,14 @@ IPS = {
     "xpu":         "ip/xpu/src",
     "side_ch":     "ip/side_ch/src",
 }
+# Edits to the simulation copy of RTL that lives in a submodule (fixed here, not upstream yet).
+# Each must match exactly once, so an upstream change shows up as a prep error.
+SIM_PATCHES = {
+    # 4-bit register field on signal_watchdog's 16-bit port: Vivado synthesis zero-extends, xsim
+    # leaves the upper 12 bits Z (same class as the tx_intf fix a5369c9)
+    ("openofdm_rx", "openofdm_rx.v"): [(".min_signal_len_th(slv_reg4[15:12]),",
+                                        ".min_signal_len_th({12'd0, slv_reg4[15:12]}),")],
+}
 # testbenches / unused models that live next to the RTL
 EXCLUDE = re.compile(r"(_tb\.v$|^rand_gen_tb\.v$)")
 MOD_RE = re.compile(r"^\s*module\s+(\w+)", re.M)
@@ -68,6 +76,10 @@ def main():
                 # definition and instantiation:  module m  /  m #(  /  m inst (
                 t = re.sub(rf"(\bmodule\s+){m}\b", rf"\g<1>{ip}__{m}", t)
                 t = re.sub(rf"^(\s*){m}(\s*(#|\w+\s*\())", rf"\g<1>{ip}__{m}\2", t, flags=re.M)
+            for old, new in SIM_PATCHES.get((ip, f), []):
+                if t.count(old) != 1:
+                    raise SystemExit(f"prep_rtl.py: sim patch for {ip}/{f} no longer matches: {old}")
+                t = t.replace(old, new)
             if f in files[ip]:
                 # RTL is Verilog-2005 (uses 'bit' as a port name etc.); keep SV keywords
                 # out of it even when the simulator compiles everything in SV mode.
