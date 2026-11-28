@@ -1,0 +1,3 @@
+# Viterbi trace: Xilinx model vs sova_dec on the same vector (passes with Xilinx, fails with SOVA)
+run --tb openofdm_rx --test orx_vectors_test --plusargs "+VIT_TRACE +RX_VEC=$(OW_HW)/ip/openofdm_rx/testing_inputs/simulated/ag_54M_len1537_pre100_post200_openwifi.txt"
+--vit sova run --tb openofdm_rx --test orx_vectors_test --plusargs "+VIT_TRACE +RX_VEC=$(OW_HW)/ip/openofdm_rx/testing_inputs/simulated/ag_54M_len1537_pre100_post200_openwifi.txt"
