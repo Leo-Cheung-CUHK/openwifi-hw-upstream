@@ -14,10 +14,12 @@ the single source of truth.
   python uvm/sim/xsim.py run --tb openofdm_tx --test otx_rate_sweep_test [--seed 1] [--plusargs "+N_PKT=50"]
   python uvm/sim/xsim.py regress [--tb xpu --tb side_ch]
   python uvm/sim/xsim.py rxlists                      vector lists for orx_vectors_test
+  python uvm/sim/xsim.py --vit sova xip|run|regress   openofdm_rx with ip/sova_dec instead of the
+                                                      Xilinx Viterbi IP (no Viterbi licence needed)
 
 Global options: --vivado <Vivado/2022.2 dir> (default: $XILINX_VIVADO, else vivado on PATH),
 --hw <openwifi-hw checkout> (default: two levels up), --build (default: $OW_BUILD, else uvm/build),
---board, --part, --dry-run.
+--board, --part, --vit xilinx|sova (default: VIT in sim/Makefile), --dry-run.
 
 Vivado's xvlog/xelab/xsim are .bat files on Windows: every argument goes through a -f options
 file, which avoids cmd.exe's 8191-character limit and its handling of '=' and '+'.
@@ -198,6 +200,7 @@ def cmd_prep(a, var, tools):
 
 def cmd_xip(a, var, tools):
     tools.need_root()
+    os.environ["OW_VIT"] = a.vit           # gen_xilinx_ip_sim.tcl skips the Viterbi IP for sova
     out = os.path.join(a.build, "xip")
     os.makedirs(out, exist_ok=True)
     ok = tools.run("vivado", ["-mode", "batch", "-nojournal", "-nolog",
@@ -208,10 +211,13 @@ def cmd_xip(a, var, tools):
     return 0 if ok else 1
 
 
-def xip_groups(list_file):
-    """consecutive (library, language) runs of xip_sources.txt, compile order kept"""
+def xip_groups(list_file, skip_viterbi=False):
+    """consecutive (library, language) runs of xip_sources.txt, compile order kept;
+    skip_viterbi drops the Viterbi IP (VIT=sova, same filter as sim/Makefile XIP_FILTER)"""
     groups = []
     for line in open(list_file, encoding="utf-8"):
+        if skip_viterbi and "viterbi" in line.lower():
+            continue
         parts = line.strip().split(None, 2)
         if len(parts) != 3:
             continue
@@ -230,8 +236,19 @@ def newest(paths):
     return max((os.path.getmtime(p) for p in paths if os.path.exists(p)), default=0)
 
 
+def sova_src(a, d):
+    """VIT=sova: sova_dec + its viterbi_v7_0 wrapper, for TBs that contain openofdm_rx (= SOVA_SRC)"""
+    if a.vit != "sova" or "openofdm_rx" not in d["ips"]:
+        return []
+    return [fwd(os.path.join(a.hw, "ip", "sova_dec", "src", f)) for f in ("sova_dec.sv", "viterbi_v7_0_sova.sv")]
+
+
+def vdir(a):
+    return "_sova" if a.vit == "sova" else ""
+
+
 def compile_tb(a, var, tools, tb, d):
-    work = os.path.join(a.build, "xsim", tb)
+    work = os.path.join(a.build, "xsim", tb + vdir(a))
     stamp = os.path.join(work, "compile.stamp")
     root = tools.need_root()
     rtl = os.path.join(a.build, "rtl")
@@ -249,7 +266,7 @@ def compile_tb(a, var, tools, tb, d):
                 for x in read_f(os.path.join(rtl, f"{ip}.f"), None)]
     xpm = [f"{root}/data/ip/xpm/{n}/hdl/{n}.sv" for n in ("xpm_cdc", "xpm_fifo", "xpm_memory")]
     glbl = f"{root}/data/verilog/src/glbl.v"
-    main = common + rtl_args + d["src"]
+    main = common + rtl_args + sova_src(a, d) + d["src"]
     xip_list = os.path.join(a.build, "xip", "xip_sources.txt")
     if d["xip"] and not os.path.isfile(xip_list) and not tools.dry:
         print(f"[{tb}] needs the Xilinx IP models: run `xsim.py xip` first (Vivado + Viterbi licence)")
@@ -267,7 +284,8 @@ def compile_tb(a, var, tools, tb, d):
     os.makedirs(work, exist_ok=True)
     libs = []
     if d["xip"]:
-        for i, (lib, lang, files) in enumerate(xip_groups(xip_list) if os.path.isfile(xip_list) else []):
+        groups = xip_groups(xip_list, a.vit == "sova") if os.path.isfile(xip_list) else []
+        for i, (lib, lang, files) in enumerate(groups):
             tool = "xvhdl" if lang == "vhdl" else "xvlog"
             args = ["--work", lib] + ([] if lang == "vhdl" else ["-sv"]) + files
             if not tools.run(tool, args, work, log=f"xip_{i:03d}.log", argfile=f"xip_{i:03d}.args"): return False
@@ -299,8 +317,8 @@ def run_test(a, var, tools, tb, test, seed, plusargs, verb):
     test = test or d["tests"][0]
     if not compile_tb(a, var, tools, tb, d):
         return "COMPILE-FAIL", None
-    work = os.path.join(a.build, "xsim", tb)
-    rdir = os.path.join(a.build, "xsim", "run", f"{tb}_{test}_{seed}")
+    work = os.path.join(a.build, "xsim", tb + vdir(a))
+    rdir = os.path.join(a.build, "xsim", "run" + vdir(a), f"{tb}_{test}_{seed}")
     os.makedirs(rdir, exist_ok=True)
     log = os.path.join(rdir, "sim.log")
     pa = ["-testplusarg", f"UVM_TESTNAME={test}", "-testplusarg", f"UVM_VERBOSITY={verb}"]
@@ -405,6 +423,8 @@ def main():
     ap.add_argument("--build", default=os.environ.get("OW_BUILD") or os.path.join(OW_UVM, "build"),
                     help="build tree (default $OW_BUILD, else uvm/build); keep it outside the checkout on a "
                          "CI runner so the Xilinx IP models survive actions/checkout's clean")
+    ap.add_argument("--vit", choices=("xilinx", "sova"), default=var.get("VIT", "xilinx"),
+                    help="Viterbi decoder in openofdm_rx: Xilinx IP or ip/sova_dec (no licence)")
     ap.add_argument("--dry-run", action="store_true", help="print the tool calls, run nothing")
     sp = ap.add_subparsers(dest="cmd", required=True)
     for n in ("env", "list", "prep", "xip", "rxlists", "cov"):

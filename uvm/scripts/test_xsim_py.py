@@ -55,6 +55,8 @@ elif name == "vivado":
     for lib, lang, n in (("xbip_utils_v3_0_10", "vhdl", "a.vhd"), ("xbip_utils_v3_0_10", "vhdl", "b.vhd"),
                          ("viterbi_v9_1_15", "verilog", "c.v"), ("xil_defaultlib", "verilog", "d.v"),
                          ("xil_defaultlib", "verilog", "e.v")):
+        if os.environ.get("OW_VIT") == "sova" and lib.startswith("viterbi"):
+            continue
         p = out + "/ip/" + n; open(p, "w").write("// fake\n"); fs.append("%s %s %s" % (lib, lang, p))
     open(out + "/xip_sources.txt", "w").write("\n".join(fs) + "\n")
 '''
@@ -162,6 +164,36 @@ def main():
         check(rc == 0 and rc2 == 0 and el == ["xpu"], f"changed xpu source recompiles xpu only (got {el})")
     finally:
         os.utime(src, (st.st_atime, st.st_mtime))
+
+    # VIT=sova: ip/sova_dec replaces the Viterbi IP in openofdm_rx (full xip list, filtered)
+    open(calls, "w").close()
+    rc, out = xsim("--vit", "sova", "run", "--tb", "openofdm_rx")
+    L = log()
+    check(rc == 0, "sova: openofdm_rx compiles and runs with --vit sova" + ("" if rc == 0 else "\n" + out[-2000:]))
+    work = [c for c in L if c["tool"] == "xelab"]
+    check(len(work) == 1 and work[0]["cwd"].endswith("/openofdm_rx_sova"), "sova: own model dir openofdm_rx_sova")
+    xl = [c for c in L if "--work" in c["args"]]
+    check(xl and not any("viterbi" in x for c in xl for x in c["args"]), "sova: Viterbi IP not compiled")
+    check(work and "viterbi_v9_1_15" not in work[0]["args"] and "xbip_utils_v3_0_10" in work[0]["args"],
+          "sova: xelab links the other xip libraries, not the Viterbi one")
+    mk = subprocess.run(["make", "-s", "-n", "-C", os.path.join(OW_UVM, "sim"), "compile", "SIM=xsim", "TB=openofdm_rx",
+                         "VIT=sova", f"XILINX_VIVADO={root}", f"BUILD={build}"], capture_output=True, text=True).stdout
+    line = [l for l in mk.split("&&") if "xvlog" in l and "-L uvm" in l and "glbl" not in l][0].split()
+    want = []
+    for i, x in enumerate(line):
+        if line[i - 1] == "-f":
+            want += [l.strip() for l in open(x) if l.strip() and not l.startswith("+")]
+        elif x.endswith((".sv", ".v")):
+            want.append(x)
+    got = [x for x in next(c for c in L if c["tool"] == "xvlog" and "--work" not in c["args"]
+                           and not any(y.endswith("glbl.v") for y in c["args"]))["args"] if x.endswith((".sv", ".v"))]
+    check(got == want and any(x.endswith("/sova_dec.sv") for x in got)
+          and any(x.endswith("/viterbi_v7_0_sova.sv") for x in got),
+          f"sova: xvlog sources == Makefile VIT=sova flow, with sova_dec ({len(got)} files)")
+    check("grep -iv viterbi" in mk and "xip_sources_sova.txt" in mk, "sova: Makefile filters the Viterbi IP too")
+    rc, out = xsim("--vit", "sova", "xip")
+    lst = open(os.path.join(build, "xip", "xip_sources.txt")).read()
+    check(rc == 0 and "viterbi" not in lst, "sova: xip without the Viterbi IP (OW_VIT=sova)")
 
     rc, out = xsim("--hw", "/tmp/AI+Openwifi", "env")
     check("'+'" in out, "env warns about '+' in the checkout path")

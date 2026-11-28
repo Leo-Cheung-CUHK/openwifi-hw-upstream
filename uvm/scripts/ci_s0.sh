@@ -7,7 +7,7 @@
 #
 # Needs: python3 + numpy + pyslang, Verilator >= 5.05x with z3 on PATH (for the Verilator steps),
 #        uvm-core 2020.3.0 (UVM_SRC), ip/openofdm_rx submodule checked out.
-# Steps: prep lint rtlstrict xsimpy smoke backpressure otx golden pyrx htsig
+# Steps: prep lint rtlstrict xsimpy smoke backpressure otx golden pyrx htsig sova
 # Exit status is non-zero if any step fails; a summary table is printed at the end and,
 # under GitHub Actions, written to the job summary.
 set -uo pipefail
@@ -17,7 +17,7 @@ OW_HW=${OW_HW:-$(cd "$OW_UVM/.." && pwd)}
 UVM_SRC=${UVM_SRC:?set UVM_SRC to uvm-core/src}
 OUT=${CI_OUT:-$OW_UVM/build/ci}
 JOBS=${JOBS:-$(nproc)}
-STEPS=${*:-prep lint rtlstrict xsimpy smoke backpressure otx golden pyrx htsig}
+STEPS=${*:-prep lint rtlstrict xsimpy smoke backpressure otx golden pyrx htsig sova}
 OTX_TESTS="otx_reg_reset_test otx_rate_sweep_test otx_random_test otx_backpressure_test"
 GOLDEN=$OW_UVM/vectors/otx_rate_sweep/fixed
 export OW_HW
@@ -110,10 +110,18 @@ s_htsig() {   # short HT-SIG noise run: must run, fixed RTL must not be worse th
     tee "$OUT/htsig.txt" &&
   awk '/^ *[0-9.]+ +[0-9.]+ +[0-9.]+ *$/ { o+=$2; f+=$3 } END { printf "sum FER old %.3f fixed %.3f\n", o, f; exit !(f <= o) }' "$OUT/htsig.txt"
 }
+s_sova() {   # open-source SOVA decoder (ip/sova_dec): bit-true model self-check, RTL bit-exact
+  # vs the model in Verilator (BR + HR, gaps, aclken, resets), and openofdm_rx elaborated with
+  # the drop-in viterbi_v7_0 wrapper (VIT=sova) so its ports match ofdm_decoder.v
+  ( cd "$OW_UVM/scripts" && python3 test_sova_ref.py --quick ) &&
+  OW_BUILD="$OUT" "$OW_HW/ip/sova_dec/tb/run_vlt.sh" "${SOVA_FRAMES:-20}" "${SOVA_SEEDS:-11}" &&
+  make -C "$OW_UVM/sim" -s lint-one TB=openofdm_rx VIT=sova OW_HW="$OW_HW" UVM_SRC="$UVM_SRC" | tee /dev/stderr |
+    grep -q "RESULT PASS"
+}
 
 for s in $STEPS; do
   case $s in
-    prep|lint|rtlstrict|xsimpy|smoke|backpressure|otx|golden|pyrx|htsig) run_step "$s" "s_$s" ;;
+    prep|lint|rtlstrict|xsimpy|smoke|backpressure|otx|golden|pyrx|htsig|sova) run_step "$s" "s_$s" ;;
     *) echo "unknown step $s"; exit 2 ;;
   esac
 done

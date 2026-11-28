@@ -37,7 +37,11 @@ set xcis {}
 foreach ip {atan_lut complex_multiplier deinter_lut rot_lut div_for_rotafft div_gen_csi_over_nova} {
   lappend xcis $rx/Xilinx/$fam/$ip/$ip.xci
 }
-lappend xcis $rx/Xilinx/$fam/viterbi/viterbi_v7_0.xci
+# OW_VIT=sova (make xip VIT=sova / xsim.py --vit sova xip): openofdm_rx is simulated with
+# ip/sova_dec instead, so the Viterbi IP (and its licence) is not needed
+if {!([info exists ::env(OW_VIT)] && $::env(OW_VIT) eq "sova")} {
+  lappend xcis $rx/Xilinx/$fam/viterbi/viterbi_v7_0.xci
+}
 lappend xcis $rx/Xilinx/$fam/xfft/xfft_v9.xci
 lappend xcis $dg/div_gen_div_gen_0_0/div_gen_div_gen_0_0.xci
 lappend xcis $dg/div_gen_xlslice_0_0/div_gen_xlslice_0_0.xci

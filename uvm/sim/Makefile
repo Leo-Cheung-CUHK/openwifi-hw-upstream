@@ -7,6 +7,10 @@
 #   make lint                                  elaborate every TB with slang (pip install pyslang), no simulator needed
 #   make smoke                                 Verilator + Python reference check of openofdm_tx (no licence)
 #
+#   make run TB=openofdm_rx VIT=sova ...       openofdm_rx with the open-source SOVA decoder (ip/sova_dec)
+#                                              instead of the Xilinx Viterbi IP; `make xip VIT=sova` skips
+#                                              the Viterbi IP, so no Viterbi licence is needed at all
+#
 # TB = openofdm_tx | openofdm_rx | tx_intf | rx_intf | xpu | side_ch | chip
 # SIM = xsim (Vivado 2022.2, UVM 1.2 built in) | questa | vcs | xcelium
 #     | verilator (>= 5.05x built from source, + z3 solver, UVM_SRC=<uvm-core/src>; no licence;
@@ -30,6 +34,10 @@ BUILD          := $(OW_UVM)/build
 VARIANT        ?=
 RUN             = $(BUILD)/run$(VARIANT)/$(TB)_$(TEST)_$(SEED)
 XILINX_VIVADO  ?= $(shell v=$$(which vivado 2>/dev/null) && dirname $$(dirname $$v))
+# Viterbi decoder inside openofdm_rx: xilinx (viterbi_v7_0 IP) | sova (ip/sova_dec, same module
+# name and ports + LLR output; BR-SOVA, EXTRA_DEFS=+define+SOVA_HR for HR-SOVA)
+VIT            ?= xilinx
+SOVA_SRC       := $(OW_HW)/ip/sova_dec/src/sova_dec.sv $(OW_HW)/ip/sova_dec/src/viterbi_v7_0_sova.sv
 # slang lint only: path to uvm-core/src
 UVM_SRC        ?= 
 
@@ -111,8 +119,19 @@ INCS    = +incdir+$(OW_UVM)/sim/gen_inc +incdir+$(OW_HW)/ip
 EXTRA_DEFS ?=
 DEFS    = +define+NUM_CLK_PER_US=$(NUM_CLK_PER_US) $(EXTRA_DEFS)
 COMMON  = $(shell sed -e '/^\/\//d' -e 's#$${OW_UVM}#$(OW_UVM)#' $(V)/common/common.f)
-RTL_F   = $(foreach i,$(IPS),-f $(BUILD)/rtl/$(i).f)
+RTL_F   = $(foreach i,$(IPS),-f $(BUILD)/rtl/$(i).f) \
+          $(if $(and $(filter sova,$(VIT)),$(filter openofdm_rx,$(IPS))),$(SOVA_SRC))
 XIP_DIR = $(BUILD)/xip
+# VIT=sova: the Xilinx IP list without the Viterbi core (works with a full or a sova-only xip build),
+# and separate model/run directories so both decoders can be kept side by side
+ifeq ($(VIT),sova)
+override VARIANT := $(VARIANT)_sova
+XIP_LIST   = $(RUN)/xip_sources_sova.txt
+XIP_FILTER = grep -iv viterbi $(XIP_DIR)/xip_sources.txt > $(XIP_LIST);
+else
+XIP_LIST   = $(XIP_DIR)/xip_sources.txt
+XIP_FILTER =
+endif
 
 .PHONY: prep xip compile run regress regress-clk lint smoke rxlists clean
 
@@ -135,17 +154,17 @@ prep:
 	python3 $(OW_UVM)/scripts/prep_rtl.py --hw $(OW_HW) --out $(BUILD)/rtl
 
 xip:
-	vivado -mode batch -nojournal -nolog -source $(OW_UVM)/scripts/gen_xilinx_ip_sim.tcl \
+	OW_VIT=$(VIT) vivado -mode batch -nojournal -nolog -source $(OW_UVM)/scripts/gen_xilinx_ip_sim.tcl \
 	  -tclargs $(OW_HW) $(XIP_DIR) $(PART) $(SIM) $(LIBMAP)
 
 # ---------------------------------------------------------------- xsim
 ifeq ($(SIM),xsim)
 compile:
 	mkdir -p $(RUN) && cd $(RUN) && \
-	if [ "$(XIP)" = "1" ]; then $(OW_UVM)/sim/xip_compile.sh xsim $(XIP_DIR)/xip_sources.txt; fi && \
+	if [ "$(XIP)" = "1" ]; then $(XIP_FILTER) $(OW_UVM)/sim/xip_compile.sh xsim $(XIP_LIST); fi && \
 	xvlog -sv -L uvm $(INCS) $(DEFS) $(XPM_SRC) $(GLBL) && \
 	xvlog -sv -L uvm $(INCS) $(DEFS) $(COMMON) $(RTL_F) $(SRC_$(TB)) && \
-	xelab -debug typical -L uvm -L xpm $$( [ "$(XIP)" = "1" ] && sed 's/ .*//' $(XIP_DIR)/xip_sources.txt | sort -u | sed 's/^/-L /') \
+	xelab -debug typical -L uvm -L xpm $$( [ "$(XIP)" = "1" ] && sed 's/ .*//' $(XIP_LIST) | sort -u | sed 's/^/-L /') \
 	  -timescale 1ns/1ps work.$(TOP) work.glbl -s $(TOP)_snap
 run: compile
 	cd $(RUN) && ln -sf $(OW_HW)/ip/openofdm_tx/src/icmem_*.mem . && \
@@ -157,11 +176,11 @@ endif
 ifeq ($(SIM),questa)
 compile:
 	mkdir -p $(RUN) && cd $(RUN) && vlib work && \
-	if [ "$(XIP)" = "1" ]; then $(OW_UVM)/sim/xip_compile.sh questa $(XIP_DIR)/xip_sources.txt; fi && \
+	if [ "$(XIP)" = "1" ]; then $(XIP_FILTER) $(OW_UVM)/sim/xip_compile.sh questa $(XIP_LIST); fi && \
 	vlog -sv -mfcu $(INCS) $(DEFS) $(XPM_SRC) $(GLBL) $(COMMON) $(RTL_F) $(SRC_$(TB)) -timescale 1ns/1ps
 run: compile
 	cd $(RUN) && ln -sf $(OW_HW)/ip/openofdm_tx/src/icmem_*.mem . && \
-	vsim -c -sv_seed $(SEED) $(TOP) glbl $$( [ "$(XIP)" = "1" ] && sed 's/ .*//' $(XIP_DIR)/xip_sources.txt | sort -u | sed 's/^/-L /') \
+	vsim -c -sv_seed $(SEED) $(TOP) glbl $$( [ "$(XIP)" = "1" ] && sed 's/ .*//' $(XIP_LIST) | sort -u | sed 's/^/-L /') \
 	  +UVM_TESTNAME=$(TEST) +UVM_VERBOSITY=$(VERB) $(ARGS_$(TEST)) $(PLUSARGS) -do "run -all; quit -f" | tee sim.log
 endif
 
@@ -169,7 +188,7 @@ endif
 ifeq ($(SIM),vcs)
 compile:
 	mkdir -p $(RUN) && cd $(RUN) && \
-	if [ "$(XIP)" = "1" ]; then $(OW_UVM)/sim/xip_compile.sh vcs $(XIP_DIR)/xip_sources.txt; fi && \
+	if [ "$(XIP)" = "1" ]; then $(XIP_FILTER) $(OW_UVM)/sim/xip_compile.sh vcs $(XIP_LIST); fi && \
 	vcs -full64 -sverilog -ntb_opts uvm-1.2 -timescale=1ns/1ps $(INCS) $(DEFS) $(XPM_SRC) $(GLBL) \
 	  $(COMMON) $(RTL_F) $(SRC_$(TB)) -top $(TOP) -top glbl -o simv
 run: compile
