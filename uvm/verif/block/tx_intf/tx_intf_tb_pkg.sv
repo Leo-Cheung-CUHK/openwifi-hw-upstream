@@ -466,8 +466,9 @@ package tx_intf_tb_pkg;
       foreach (rates[r]) for (int traffic = 0; traffic < 2; traffic++) begin
         wifi_frame d = rand_frame(60, 400, 0, traffic ? 0 : -1), c = wifi_frame::type_id::create("cts");
         bit [15:0] dur = 16'($urandom_range(2000, 100)); int unsigned cts_hw;
-        bit [3:0] data_code = d.ht ? 4'(d.rate_hw) : legacy_rate_code(d.rate_hw);
+        bit [3:0] data_code;
         time gap;
+        data_code = d.ht ? 4'(d.rate_hw) : legacy_rate_code(d.rate_hw);   // not an initializer: it reads d (xsim, finding 10)
         cts_hw = traffic ? (d.ht ? 4 : d.rate_hw) : rates[r];
         c.c_len.constraint_mode(0);                    // a CTS MPDU is 10 bytes (c_len: >= 14)
         if (!c.randomize() with { ht == 0; rate_hw == cts_hw; mpdu_len == 10; need_ack == 0; }) `uvm_fatal("RAND", "cts")
