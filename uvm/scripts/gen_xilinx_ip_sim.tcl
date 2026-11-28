@@ -55,10 +55,16 @@ generate_target simulation [get_ips]
 
 # simulator-agnostic compile list: "<library> <verilog|systemverilog|vhdl> <path>", in order
 set fh [open $out/xip_sources.txt w]
-foreach f [get_files -compile_order sources -used_in simulation -of_objects [get_ips]] {
-  set t [string tolower [get_property FILE_TYPE $f]]
-  if {[string match "*vhdl*" $t]} { set t vhdl } elseif {[string match "*systemverilog*" $t]} { set t systemverilog } else { set t verilog }
-  puts $fh "[get_property LIBRARY $f] $t $f"
+# -compile_order takes one IP at a time; shared library files (xbip_*, ...) are listed once
+set seen [dict create]
+foreach ip [get_ips] {
+  foreach f [get_files -compile_order sources -used_in simulation -of_objects $ip] {
+    if {[dict exists $seen $f]} { continue }
+    dict set seen $f 1
+    set t [string tolower [get_property FILE_TYPE $f]]
+    if {[string match "*vhdl*" $t]} { set t vhdl } elseif {[string match "*systemverilog*" $t]} { set t systemverilog } else { set t verilog }
+    puts $fh "[get_property LIBRARY $f] $t $f"
+  }
 }
 puts $fh "xil_defaultlib verilog $out/div_gen.v"
 close $fh
