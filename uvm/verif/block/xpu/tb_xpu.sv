@@ -70,13 +70,23 @@ module tb_xpu;
   end
   // ---- functional coverage (FLOW.md §3, merged by cov_report.py) ----
   // CSMA/CA backoff states, packet-filter rules that let a frame through, queue x need_ack
-  localparam string CSMA_ST[7] = '{"IDLE", "CH_BUSY", "WAIT_1", "WAIT_2", "RUN", "SUSPEND", "WAIT_FOR_OWN"};
-  localparam int    FLT_BIT[10] = '{1, 4, 5, 6, 7, 8, 9, 10, 11, 13};
-  localparam string FLT_NAME[10] = '{"ALLMULTI", "BCN_PRBRESP_PROMISC", "CONTROL", "OTHER_BSS", "PSPOLL", "PROBE_REQ",
-                                     "UNICAST_FOR_US", "BROADCAST_ALL_ONE", "BROADCAST_ALL_ZERO", "MONITOR_ALL"};
+  // names through functions: no string-array localparams (xsim)
+  function automatic string CSMA_ST(int i);
+    case (i) 0: return "IDLE"; 1: return "CH_BUSY"; 2: return "WAIT_1"; 3: return "WAIT_2";
+             4: return "RUN"; 5: return "SUSPEND"; default: return "WAIT_FOR_OWN"; endcase
+  endfunction
+  function automatic int FLT_BIT(int i);
+    case (i) 0: return 1; 1: return 4; 2: return 5; 3: return 6; 4: return 7; 5: return 8;
+             6: return 9; 7: return 10; 8: return 11; default: return 13; endcase
+  endfunction
+  function automatic string FLT_NAME(int i);
+    case (i) 0: return "ALLMULTI"; 1: return "BCN_PRBRESP_PROMISC"; 2: return "CONTROL"; 3: return "OTHER_BSS";
+             4: return "PSPOLL"; 5: return "PROBE_REQ"; 6: return "UNICAST_FOR_US"; 7: return "BROADCAST_ALL_ONE";
+             8: return "BROADCAST_ALL_ZERO"; default: return "MONITOR_ALL"; endcase
+  endfunction
   initial begin
-    foreach (CSMA_ST[i]) ow_cov_pkg::ow_cov::declare("xpu_csma_state", CSMA_ST[i]);
-    foreach (FLT_NAME[i]) ow_cov_pkg::ow_cov::declare("xpu_filter", {FLT_NAME[i], ".pass"});
+    for (int i = 0; i < 7; i++)  ow_cov_pkg::ow_cov::declare("xpu_csma_state", CSMA_ST(i));
+    for (int i = 0; i < 10; i++) ow_cov_pkg::ow_cov::declare("xpu_filter", {FLT_NAME(i), ".pass"});
     ow_cov_pkg::ow_cov::declare("xpu_filter", "blocked");
     for (int q = 0; q < 4; q++) for (int a = 0; a < 2; a++) ow_cov_pkg::ow_cov::declare("xpu_tx_queue", $sformatf("q%0d_ack%0d", q, a));
   end
@@ -84,12 +94,12 @@ module tb_xpu;
   always @(posedge clk) if (rst_n) begin
     cov_st_d <= dut.csma_ca_i.backoff_state; cov_flt_d <= dut.block_rx_dma_to_ps_valid; cov_trig_d <= txs.high_trigger;
     if (dut.csma_ca_i.backoff_state != cov_st_d && dut.csma_ca_i.backoff_state < 7)
-      ow_cov_pkg::ow_cov::hit("xpu_csma_state", CSMA_ST[dut.csma_ca_i.backoff_state]);
+      ow_cov_pkg::ow_cov::hit("xpu_csma_state", CSMA_ST(dut.csma_ca_i.backoff_state));
     if (dut.block_rx_dma_to_ps_valid && !cov_flt_d) begin
       if (dut.block_rx_dma_to_ps) ow_cov_pkg::ow_cov::hit("xpu_filter", "blocked");
-      else foreach (FLT_BIT[i])
-        if (FLT_BIT[i] == 13 ? dut.pkt_filter_ctl_i.filter_cfg[13] : dut.pkt_filter_ctl_i.allow_rx_dma_to_ps_reg[FLT_BIT[i]])
-          ow_cov_pkg::ow_cov::hit("xpu_filter", {FLT_NAME[i], ".pass"});
+      else for (int i = 0; i < 10; i++)
+        if (FLT_BIT(i) == 13 ? dut.pkt_filter_ctl_i.filter_cfg[13] : dut.pkt_filter_ctl_i.allow_rx_dma_to_ps_reg[FLT_BIT(i)])
+          ow_cov_pkg::ow_cov::hit("xpu_filter", {FLT_NAME(i), ".pass"});
     end
     if (txs.high_trigger && !cov_trig_d)
       ow_cov_pkg::ow_cov::hit("xpu_tx_queue", $sformatf("q%0d_ack%0d", txs.tx_queue_idx, txs.tx_pkt_need_ack));

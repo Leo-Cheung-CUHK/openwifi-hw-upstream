@@ -9,17 +9,20 @@ package ow_cov_pkg;
   `include "uvm_macros.svh"
   import axil_pkg::*;
 
+  // one flat associative array keyed "<space> <bin>": xsim 2022.2 rejects a foreach over an
+  // associative array of associative arrays (VRFC 10-9049) and then stalls in xelab
   class ow_cov;
-    static int unsigned hits[string][string];
+    static int unsigned hits[string];
     static function void declare(string space, string bin);
-      if (!hits.exists(space) || !hits[space].exists(bin)) hits[space][bin] = 0;
+      string k = {space, " ", bin};
+      if (!hits.exists(k)) hits[k] = 0;
     endfunction
     static function void hit(string space, string bin);
-      if (hits.exists(space) && hits[space].exists(bin)) hits[space][bin]++;
-      else hits[space][bin] = 1;
+      string k = {space, " ", bin};
+      if (hits.exists(k)) hits[k]++; else hits[k] = 1;
     endfunction
     static function void dump();
-      foreach (hits[s]) foreach (hits[s][b]) $display("OWCOV %s %s %0d", s, b, hits[s][b]);
+      foreach (hits[k]) $display("OWCOV %s %0d", k, hits[k]);
     endfunction
   endclass
 
