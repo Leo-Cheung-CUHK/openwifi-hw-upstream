@@ -151,4 +151,13 @@ desktop (Windows, Vivado 2022.2, checkout `D:\AI_Openwifi\ow`):
   measured backoff fits the queue's CW, but on queues 1–3 it often does not match the
   `num_slot_random` the TB samples at `backoff_done` (shorter by 2–4 slots, once longer) —
   needs a waveform side by side with Verilator.
-* Not run yet on xsim: openofdm_rx and chip (`xip` + Viterbi licence).
+* openofdm_rx on xsim (2026-11-27 night, first run in any simulator): `xsim.py xip` works with
+  the Viterbi evaluation licence (fixes in `gen_xilinx_ip_sim.tcl`: compile order per IP, `.coe/.mif`
+  to `xip_data.txt`); the sim copy of the RTL zero-extends `min_signal_len_th` and the byte-padded
+  `div_gen_csi_over_nova` tdata (`prep_rtl.py` SIM_PATCHES); the init sequence sets the watchdog
+  DC threshold (`POWER_THRES[23:16]` = 64; 0 held the receiver in reset). Results so far:
+  `orx_reg_reset_test` PASS; vectors, impairments, SNR sweep and back-to-back decode and pass
+  frame by frame; `orx_len_limits_test` fails on RTL finding K (length watchdog masked).
+  `regress --jobs 6` runs the six tests side by side (starts staggered 15 s: `xsim -R` shares
+  `xsim_script.tcl` per snapshot).
+* Not run yet on xsim: chip.
