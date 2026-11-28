@@ -28,6 +28,24 @@ package openofdm_rx_tb_pkg;
     `uvm_object_utils(rx_expect)
     function new(string name = "rx_expect"); super.new(name); endfunction
 
+    // signal_watchdog drops a frame whose L-SIG LENGTH is outside [MIN_LEN_TH, MAX_LEN_TH]
+    // (SOFT_DECODING[15:12] / [31:16], set by ow_rx_init_seq; enforced since fix K)
+    static int unsigned min_len_th = 14, max_len_th = 1700;
+    // L-SIG LENGTH of a legacy frame, or the one an HT-mixed transmitter puts in L-SIG
+    // (802.11-2020 19.3.9.4.3: LENGTH = (TXTIME - 20) / 4 * 3 - 3)
+    static function int unsigned lsig_len(bit ht, int unsigned mcs, bit sgi, int unsigned l);
+      int unsigned ndbps[8] = '{26, 52, 78, 104, 156, 208, 234, 260};
+      int unsigned nsym, txtime;
+      if (!ht) return l;
+      nsym   = (16 + 8 * l + 6 + ndbps[mcs % 8] - 1) / ndbps[mcs % 8];
+      txtime = 36 + (sgi ? 4 * ((nsym * 36 + 39) / 40) : 4 * nsym);   // L-STF..HT-LTF1, then data
+      return (txtime - 20) / 4 * 3 - 3;
+    endfunction
+    static function bit len_dropped(bit ht, int unsigned mcs, bit sgi, int unsigned l);
+      int unsigned x = lsig_len(ht, mcs, sgi, l);
+      return x < min_len_th || x > max_len_th;
+    endfunction
+
     // expectation from a vector file: <name>.exp sidecar, else the file-name convention
     static function rx_expect from_file(string path);
       rx_expect e = new("e"); string base = path; int fd, ht, r, g, l, a, n;
@@ -51,7 +69,9 @@ package openofdm_rx_tb_pkg;
       if ($sscanf(base, "ag_%dM_len%d", r, l) == 2) begin
         int unsigned mb[8] = '{6, 9, 12, 18, 24, 36, 48, 54};
         foreach (mb[k]) if (mb[k] == r) e.rate8 = {4'b0, legacy_rate_code(4 + k)};
-        e.len = l; e.kind = EXP_HDR; return e;
+        e.len = l; e.kind = EXP_HDR;
+        if (len_dropped(0, 0, 0, l)) begin e.kind = EXP_REJECT; e.src = {path, " [reject: L-SIG LENGTH > MAX_LEN_TH]"}; end
+        return e;
       end
       if ($sscanf(base, "dot11a_%dmbps", r) == 1) begin          // testing_inputs/conducted: rate only
         int unsigned mb[8] = '{6, 9, 12, 18, 24, 36, 48, 54};
@@ -59,7 +79,9 @@ package openofdm_rx_tb_pkg;
         e.len = 0; e.kind = EXP_HDR; return e;
       end
       if ($sscanf(base, "ht_mcs%d_gi%d_aggr%d_len%d", r, g, a, l) == 4) begin
-        e.rate8 = {1'b1, 7'(r)}; e.sgi = g; e.len = l; e.kind = EXP_HDR; return e;
+        e.rate8 = {1'b1, 7'(r)}; e.sgi = g; e.len = l; e.kind = EXP_HDR;
+        if (len_dropped(1, r, g, l)) begin e.kind = EXP_REJECT; e.src = {path, " [reject: L-SIG LENGTH > MAX_LEN_TH]"}; end
+        return e;
       end
       return e;   // unknown naming: decode is observed but not checked
     endfunction

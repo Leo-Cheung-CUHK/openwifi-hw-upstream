@@ -310,12 +310,15 @@ def compile_tb(a, var, tools, tb, d):
     return True
 
 
-def run_test(a, var, tools, tb, test, seed, plusargs, verb):
+def run_test(a, var, tools, tb, test, seed, plusargs, verb, compiled=False):
     t = tb_table(var)
     if tb not in t: sys.exit(f"xsim.py: unknown TB {tb} (one of {', '.join(TBS)})")
     d = t[tb]
     test = test or d["tests"][0]
-    if not compile_tb(a, var, tools, tb, d):
+    # compiled=True (regress --jobs): the snapshot was built once before the parallel runs and is
+    # not rebuilt here, even if a source changed meanwhile: on Windows xelab cannot replace
+    # xsimk.exe while another test of the same snapshot is running (XSIM 43-3345)
+    if not compiled and not compile_tb(a, var, tools, tb, d):
         return "COMPILE-FAIL", None
     work = os.path.join(a.build, "xsim", tb + vdir(a))
     rdir = os.path.join(a.build, "xsim", "run" + vdir(a), f"{tb}_{test}_{seed}")
@@ -351,9 +354,9 @@ STAGGER_S = float(os.environ.get("OW_XSIM_STAGGER", "15"))   # see cmd_regress -
 def cmd_regress(a, var, tools):
     t = tb_table(var)
     rows, fail = [], 0
-    def one(tb, test):
+    def one(tb, test, compiled=False):
         t0 = time.time()
-        st, log = run_test(a, var, tools, tb, test, a.seed, a.plusargs.split(), a.verb)
+        st, log = run_test(a, var, tools, tb, test, a.seed, a.plusargs.split(), a.verb, compiled)
         return (tb, test, st, int(time.time() - t0), log)
     for tb in a.tb or TBS:
         tests = t[tb]["tests"]
@@ -364,7 +367,7 @@ def cmd_regress(a, var, tools):
             # xsim -R writes xsim.dir/<snap>/xsim_script.tcl (shared by all runs of the snapshot)
             # and sources it at start-up: stagger the starts so no run reads another's arguments
             def staggered(ix):
-                time.sleep(STAGGER_S * ix[0]); return one(tb, ix[1])
+                time.sleep(STAGGER_S * ix[0]); return one(tb, ix[1], compiled=True)
             with concurrent.futures.ThreadPoolExecutor(a.jobs) as ex:
                 res = list(ex.map(staggered, enumerate(tests)))
             rows += res
