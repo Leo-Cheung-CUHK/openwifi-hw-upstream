@@ -503,7 +503,7 @@ package xpu_tb_pkg;
       fr.push_back(mk(16'h0040, 0, 48'hFF_FF_FF_FF_FF_FF, peer, 48'hFF_FF_FF_FF_FF_FF, 60)); // probe request
       fr.push_back(mk(16'h0050, 0, my_mac, bssid_other, bssid_other, 80));   // probe response
       fr.push_back(mk(16'h00B4, 300, 48'h07_00_00_00_00_02, peer, 0, 16));   // RTS, not for me
-      fr.push_back(mk(16'h00B4, 300, my_mac, peer, 0, 16));                   // RTS to me (FILTER CONTROL)
+      fr.push_back(mk(16'h00C4, 0, my_mac, 0, 0, 10));                        // CTS to me: control frame for us, no response (FILTER CONTROL)
       fr.push_back(mk(16'h00A4, 0, bssid_me, peer, 0, 16));                   // PS-Poll
       fr.push_back(mk(16'h00D4, 0, 48'h07_00_00_00_00_02, 0, 0, 10));         // ACK, not for me
       foreach (cfgs[c]) begin
