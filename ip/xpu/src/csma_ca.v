@@ -124,6 +124,7 @@
     `DEBUG_PREFIX reg [9:0] num_slot_random_log_dl_int;
 
     reg  [15:0] num_slot_random_times_slot_time_minus_backoff_advance;
+    reg  [9:0]  num_slot_random_d; // uvm finding L: the num_slot_random the product above was computed from
     wire [7:0] sifs_time_plus_2slot;
 
     reg  [11:0] eifs_time_used;
@@ -318,6 +319,7 @@
         cw_exp_log_dl<=0;
 
         num_slot_random_times_slot_time_minus_backoff_advance <= 0;
+        num_slot_random_d <= 0;
         eifs_time <= 0;
 
         eifs_time_used <= 0;
@@ -332,6 +334,7 @@
         num_slot_random_log_dl<=num_slot_random_log_dl_int;
 
         num_slot_random_times_slot_time_minus_backoff_advance <= num_slot_random*slot_time - backoff_advance;
+        num_slot_random_d <= num_slot_random; // random_seed (DDC LSBs) changes num_slot_random every cycle
         eifs_time <= ( eifs_enable?(sifs_time + difs_time + longest_ack_time):sifs_time_plus_2slot );
 
         eifs_time_used <= (eifs_time==0?0:(eifs_time - difs_advance));
@@ -420,9 +423,10 @@
               end else begin
                 if (backoff_wait_timer==0) begin
                   backoff_state<=BACKOFF_RUN;
-                  backoff_timer<=(num_slot_random==0?0:num_slot_random_times_slot_time_minus_backoff_advance);
+                  // uvm finding L: timer, zero test and log from the same (registered) draw
+                  backoff_timer<=(num_slot_random_d==0?0:num_slot_random_times_slot_time_minus_backoff_advance);
                   cw_exp_log          <=cw_exp_used;
-                  num_slot_random_log <= num_slot_random;
+                  num_slot_random_log <= num_slot_random_d;
                 end else begin
                   backoff_state<=backoff_state;
                   backoff_timer<=0;
