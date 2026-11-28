@@ -327,6 +327,9 @@ def cmd_run(a, var, tools):
     return 0 if st in ("PASS", "DRY") else 1
 
 
+STAGGER_S = float(os.environ.get("OW_XSIM_STAGGER", "15"))   # see cmd_regress --jobs
+
+
 def cmd_regress(a, var, tools):
     t = tb_table(var)
     rows, fail = [], 0
@@ -340,8 +343,12 @@ def cmd_regress(a, var, tools):
             # compile once, then the tests side by side (each has its own run dir, log and wdb)
             if not compile_tb(a, var, tools, tb, t[tb]):
                 rows.append((tb, tests[0], "COMPILE-FAIL", 0, None)); fail = 1; continue
+            # xsim -R writes xsim.dir/<snap>/xsim_script.tcl (shared by all runs of the snapshot)
+            # and sources it at start-up: stagger the starts so no run reads another's arguments
+            def staggered(ix):
+                time.sleep(STAGGER_S * ix[0]); return one(tb, ix[1])
             with concurrent.futures.ThreadPoolExecutor(a.jobs) as ex:
-                res = list(ex.map(lambda x: one(tb, x), tests))
+                res = list(ex.map(staggered, enumerate(tests)))
             rows += res
             fail |= any(r[2] not in ("PASS", "DRY") for r in res)
             continue

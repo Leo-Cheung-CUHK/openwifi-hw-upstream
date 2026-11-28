@@ -74,7 +74,7 @@ def main():
     open(os.path.join(root, "data", "verilog", "src", "glbl.v"), "w").write("// fake\n")
     build = os.path.join(tmp, "build")
     calls = os.path.join(tmp, "calls.jsonl")
-    env = dict(os.environ, FAKE_CALLS=calls)
+    env = dict(os.environ, FAKE_CALLS=calls, OW_XSIM_STAGGER="0")
     env.pop("XILINX_VIVADO", None)
 
     def xsim(*args):
