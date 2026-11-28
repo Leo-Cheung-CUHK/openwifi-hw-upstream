@@ -137,5 +137,18 @@ desktop (Windows, Vivado 2022.2, checkout `D:\AI_Openwifi\ow`):
 * Needed on the way: ARCHITECTURE.md findings 7 and 8 (xvlog/xelab), and `iq_agent` calling
   `super.build_phase` (its passive mode was ignored; the driver fought the TB-top `assign` on
   `iqo.valid`, which xsim resolved as a stuck 1).
-* Not run yet on xsim: the other five block TBs and chip (`xip` + Viterbi licence for
-  openofdm_rx and chip).
+* Block regression on xsim (2026-11-27 evening, all TBs in parallel, ~16 min wall):
+
+  | TB | result | notes |
+  |---|---|---|
+  | openofdm_tx | 7/7 | `otx_ampdu_test` after finding 10 |
+  | tx_intf | 6/7 | `txi_cts_toself_test` fails on RTL findings E/F, as in Verilator |
+  | rx_intf | 5/5 | `rxi_frames_test` after finding 10 |
+  | xpu | 8/9 | `xpu_csma_test`: 9 of 16 busy-medium cases off; see below |
+  | side_ch | 4/4 | |
+
+  Needed: tx_intf port widths (a5369c9), findings 9 and 10. Open: in `xpu_csma_test` every
+  measured backoff fits the queue's CW, but on queues 1–3 it often does not match the
+  `num_slot_random` the TB samples at `backoff_done` (shorter by 2–4 slots, once longer) —
+  needs a waveform side by side with Verilator.
+* Not run yet on xsim: openofdm_rx and chip (`xip` + Viterbi licence).
