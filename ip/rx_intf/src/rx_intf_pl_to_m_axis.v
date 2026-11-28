@@ -40,6 +40,8 @@
 	    output reg m_axis_rst,
       input  wire m_axis_tlast,
       output reg  m_axis_tlast_auto_recover,
+      input  wire m_axis_tvalid,   // uvm finding I: the fake TLAST is held until a beat carries it
+      input  wire m_axis_tready,
 
 	    // port to xilinx axi dma
 	    input wire s2mm_intr,
@@ -88,7 +90,8 @@
                        DMA_HEADER1_INSERT_AND_START =      3'b010,
                        WAIT_FILTER_FLAG =                  3'b011,
                        WAIT_DMA_TLAST =                    3'b100,
-                       WAIT_RST_DONE =                     3'b101;
+                       WAIT_RST_DONE =                     3'b101,
+                       FAKE_TLAST =                        3'b110;
 
     `DEBUG_PREFIX reg [2:0] rx_state;
     reg [2:0] old_rx_state;
@@ -229,9 +232,10 @@
             if ( (timeout_timer_1M>m_axis_tlast_auto_recover_timeout_top) && m_axis_tlast_auto_recover_enable) begin//tlast timeout, let's generate a fake tlast to release ARM dma and reset our m_axis
               // start_m_axis <= start_m_axis;
               // timeout_timer_1M<=timeout_timer_1M;
-              m_axis_rst<=1;
+              // uvm finding I: raise the fake TLAST first and reset M_AXIS only once the DMA has taken it
+              timeout_timer_1M<=0;
               m_axis_tlast_auto_recover<=1;
-              rx_state <= WAIT_RST_DONE;
+              rx_state <= FAKE_TLAST;
             end else begin
               // m_axis_tlast_auto_recover<=m_axis_tlast_auto_recover;
               if (block_rx_dma_to_ps_valid==1 && block_rx_dma_to_ps==0) begin
@@ -261,14 +265,27 @@
             // monitor_num_dma_symbol_to_ps<=monitor_num_dma_symbol_to_ps;
             if ( (timeout_timer_1M>m_axis_tlast_auto_recover_timeout_top) && m_axis_tlast_auto_recover_enable) begin//tlast timeout, let's generate a fake tlast to release ARM dma and reset our m_axis
               // timeout_timer_1M<=timeout_timer_1M;
-              m_axis_rst<=1;
+              // uvm finding I: raise the fake TLAST first and reset M_AXIS only once the DMA has taken it
+              timeout_timer_1M<=0;
               m_axis_tlast_auto_recover<=1;
-              rx_state <= WAIT_RST_DONE;
+              rx_state <= FAKE_TLAST;
             end else begin
               timeout_timer_1M<=(tsf_pulse_1M?(timeout_timer_1M+1):timeout_timer_1M);
               // m_axis_rst<=m_axis_rst;
               // m_axis_tlast_auto_recover<=m_axis_tlast_auto_recover;
               rx_state <= (m_axis_tlast?WAIT_FOR_PKT:rx_state);
+            end
+          end
+
+          FAKE_TLAST: begin
+            // a beat with TLAST terminates the S2MM transfer; without data (TVALID low) or if the DMA
+            // still does not take it within another timeout, reset as before
+            if ( (m_axis_tvalid && m_axis_tready) || (!m_axis_tvalid) || (timeout_timer_1M>m_axis_tlast_auto_recover_timeout_top) ) begin
+              m_axis_tlast_auto_recover<=0;
+              m_axis_rst<=1;
+              rx_state <= WAIT_RST_DONE;
+            end else begin
+              timeout_timer_1M<=(tsf_pulse_1M?(timeout_timer_1M+1):timeout_timer_1M);
             end
           end
 

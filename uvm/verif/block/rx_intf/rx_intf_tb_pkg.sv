@@ -283,18 +283,34 @@ package rx_intf_tb_pkg;
         repeat (2) begin rx_frame(e, 0, 14, 300); #20us; end
         if (env.sb.n_pkt_ok != n_ok0 + 2) `uvm_error("RXI_STALL", "packets after a TLAST timeout did not come through")
       end
+      // (2b) finding I (fixed): stall ends after the timeout but before a second one: the fake
+      // TLAST waits for the DMA and terminates the transfer (no TVALID withdrawn by a reset)
+      begin
+        int unsigned w0;
+        w0 = env.dma.vif.n_valid_withdrawn;
+        env.dma.cfg.ready_mode = READY_NEVER;
+        rx_frame(e, 1, 200, 300);                  // short: the first timeout comes after its airtime
+        #((top_us * 3 / 2) * 1us);
+        env.dma.cfg.ready_mode = READY_ALWAYS;
+        #20us;
+        if (env.dma.vif.n_valid_withdrawn != w0)
+          `uvm_error("RXI_STALL", "finding I: TVALID withdrawn although the DMA took the fake TLAST within the second timeout")
+        n_ok0 = env.sb.n_pkt_ok;
+        repeat (2) begin rx_frame(e, 0, 14, 300); #20us; end
+        if (env.sb.n_pkt_ok != n_ok0 + 2) `uvm_error("RXI_STALL", "packets after a fake TLAST did not come through")
+      end
       // (3) M_AXIS held in reset
       env.dma.cfg.ready_mode = READY_RANDOM;
       s.rx_m_axis_rst(env.regs, 1);
       rx_frame(e, 1); #30us;
       s.rx_m_axis_rst(env.regs, 0);
       #10us;
-      // finding J: MULTI_RST[4] does not reset rx_intf_pl_to_m_axis (MULTI_RST[8]); the frame
-      // taken during the hold parks it in WAIT_DMA_TLAST, so RX is blacked out until the TLAST
-      // timeout. Frames inside that window may be lost; after it they must all arrive.
+      // finding J (fixed): MULTI_RST[4] now also resets rx_intf_pl_to_m_axis, so the frame taken
+      // during the hold cannot park it in WAIT_DMA_TLAST; frames right after the release arrive
       n_ok0 = env.sb.n_pkt_ok;
-      repeat (2) begin rx_frame(e, 1, 14, 300); #20us; end
-      if (env.sb.n_pkt_ok == n_ok0) `uvm_info("RXI_STALL", "finding J: frames right after the M_AXIS reset release were not delivered (FSM parked until TLAST timeout)", UVM_NONE)
+      repeat (2) begin rx_frame(e, 0, 14, 300); #20us; end
+      if (env.sb.n_pkt_ok != n_ok0 + 2)
+        `uvm_error("RXI_STALL", $sformatf("finding J: %0d of 2 frames right after the M_AXIS reset release delivered", env.sb.n_pkt_ok - n_ok0))
       #(top_us * 1us);
       repeat (4) begin rx_frame(e, 0, 14, 300); #20us; end
       #50us;

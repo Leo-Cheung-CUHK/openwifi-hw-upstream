@@ -471,7 +471,7 @@
           end
 
           PREPARE_TX_JUDGE: begin
-            if (use_cts_protect==1) begin // from cts_toself_config[31] in tx queue
+            if (use_cts_protect==1 && pkt_cnt==0) begin // from cts_toself_config[31] in tx queue; first MPDU only
               high_tx_ctl_state  <= DO_CTS_TOSELF;
             end else begin
               high_tx_ctl_state  <= CHECK_AGGR;
@@ -481,7 +481,8 @@
           DO_CTS_TOSELF: begin
             send_cts_toself_wait_count <= ( ( send_cts_toself_wait_count != (`WAIT_FOR_TX_IQ_FILL_COUNT_TOP) )?(send_cts_toself_wait_count + 1): (tx_iq_fifo_empty?0:send_cts_toself_wait_count) );
             wea_internal <= (send_cts_toself_wait_count<4?1:0);
-            addra_internal <= send_cts_toself_wait_count;
+            // uvm finding F: stop one past num_dma_symbol_th, so the auto start (addra == th) fires once
+            addra_internal <= ( send_cts_toself_wait_count > num_dma_symbol_th ) ? (num_dma_symbol_th + 1) : send_cts_toself_wait_count;
             cts_toself_bb_is_ongoing <= (send_cts_toself_wait_count<4?cts_toself_bb_is_ongoing:(tx_iq_fifo_empty?0:1));
             cts_toself_rf_is_ongoing <= (send_cts_toself_wait_count==(`WAIT_FOR_TX_IQ_FILL_COUNT_TOP)?1:cts_toself_rf_is_ongoing);
             high_tx_ctl_state <= (send_cts_toself_wait_count!=(`WAIT_FOR_TX_IQ_FILL_COUNT_TOP)?high_tx_ctl_state:(tx_iq_fifo_empty?WAIT_SIFS:high_tx_ctl_state));
@@ -498,8 +499,9 @@
           WAIT_SIFS: begin
             send_cts_toself_wait_count <= send_cts_toself_wait_count+1;
             if (send_cts_toself_wait_count == send_cts_toself_wait_sifs_top_scale ) begin
-              read_from_s_axis_en <= 1;
-              high_tx_ctl_state  <= DO_TX;
+              // uvm finding E: go through CHECK_AGGR/PREP_PHY_HDR (L-SIG/HT-SIG, length, wr_counter=2)
+              // instead of straight to DO_TX with wr_counter=0 and a stale len_pkt_sym
+              high_tx_ctl_state  <= CHECK_AGGR;
             end 
           end
 

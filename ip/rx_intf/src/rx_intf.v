@@ -446,7 +446,7 @@ module rx_intf #
     .MAX_BIT_NUM_DMA_SYMBOL(MAX_BIT_NUM_DMA_SYMBOL)
   ) rx_intf_pl_to_m_axis_i (
     .clk(m00_axis_aclk),
-    .rstn(m00_axis_aresetn&(~slv_reg0[8])),
+    .rstn(m00_axis_aresetn&(~slv_reg0[8])&(~slv_reg0[4])), // uvm finding J: MULTI_RST[4] too
 
     // port to xpu
     .block_rx_dma_to_ps(block_rx_dma_to_ps),
@@ -462,6 +462,8 @@ module rx_intf #
     .m_axis_rst(m_axis_rst),
     .m_axis_tlast(m00_axis_tlast_inner),
     .m_axis_tlast_auto_recover(m00_axis_tlast_auto_recover),
+    .m_axis_tvalid(m00_axis_tvalid_inner),
+    .m_axis_tready(m00_axis_tready),
 
     // port to xilinx axi dma
     .s2mm_intr(s2mm_intr),

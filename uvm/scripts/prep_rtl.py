@@ -32,10 +32,14 @@ IPS = {
 # Edits to the simulation copy of RTL that lives in a submodule (fixed here, not upstream yet).
 # Each must match exactly once, so an upstream change shows up as a prep error.
 SIM_PATCHES = {
-    # 4-bit register field on signal_watchdog's 16-bit port: Vivado synthesis zero-extends, xsim
-    # leaves the upper 12 bits Z (same class as the tx_intf fix a5369c9)
-    ("openofdm_rx", "openofdm_rx.v"): [(".min_signal_len_th(slv_reg4[15:12]),",
-                                        ".min_signal_len_th({12'd0, slv_reg4[15:12]}),")],
+    # 1) 4-bit register field on signal_watchdog's 16-bit port: Vivado synthesis zero-extends, xsim
+    #    leaves the upper 12 bits Z (same class as the tx_intf fix a5369c9)
+    # 2) uvm finding K (RTL fix, upstream patch in uvm/patches/): the length checks (event3/event4)
+    #    see sig_valid only after state has left S_DECODE_SIGNAL, where the watchdog is disabled
+    ("openofdm_rx", "openofdm_rx.v"): [
+        (".min_signal_len_th(slv_reg4[15:12]),", ".min_signal_len_th({12'd0, slv_reg4[15:12]}),"),
+        ("assign signal_watchdog_enable = ((state <= S_DECODE_SIGNAL) & (~slv_reg1[13]));",
+         "assign signal_watchdog_enable = (((state <= S_DECODE_SIGNAL) | sig_valid) & (~slv_reg1[13]));")],
     # div_gen_csi_over_nova's AXI-Stream ports are byte-padded (divisor 32, dividend 40, dout 40 bits);
     # synthesis zero-extends/drops the padding, xsim rejects the width mismatch at a VHDL port
     ("openofdm_rx", "ofdm_decoder.v"): [
