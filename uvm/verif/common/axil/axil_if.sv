@@ -23,13 +23,19 @@ interface axil_if (input logic clk, input logic rst_n);
   // Written out per channel on purpose: a parameterised named property
   // (property p_stable(valid, ready, sig)) crashes xelab in Vivado 2022.2 xsim
   // (EXCEPTION_ACCESS_VIOLATION in "Compiling module work.axil_if"; with typed formals it hangs).
-  a_aw_stable: assert property (@(posedge clk) disable iff (!rst_n) (awvalid && !awready) |=> $stable(awaddr) && awvalid);
-  a_w_stable:  assert property (@(posedge clk) disable iff (!rst_n) (wvalid  && !wready)  |=> $stable(wdata)  && wvalid);
-  a_ar_stable: assert property (@(posedge clk) disable iff (!rst_n) (arvalid && !arready) |=> $stable(araddr) && arvalid);
-  a_b_stable:  assert property (@(posedge clk) disable iff (!rst_n) (bvalid  && !bready)  |=> $stable(bresp)  && bvalid);
-  a_r_stable:  assert property (@(posedge clk) disable iff (!rst_n) (rvalid  && !rready)  |=> $stable(rdata)  && rvalid);
+  a_aw_stable: assert property (@(posedge clk) disable iff (!rst_n) (awvalid && !awready) |=> $stable(awaddr) && awvalid)
+               else $error("AXIL: AW channel changed or withdrawn while stalled");
+  a_w_stable:  assert property (@(posedge clk) disable iff (!rst_n) (wvalid  && !wready)  |=> $stable(wdata)  && wvalid)
+               else $error("AXIL: W channel changed or withdrawn while stalled");
+  a_ar_stable: assert property (@(posedge clk) disable iff (!rst_n) (arvalid && !arready) |=> $stable(araddr) && arvalid)
+               else $error("AXIL: AR channel changed or withdrawn while stalled");
+  a_b_stable:  assert property (@(posedge clk) disable iff (!rst_n) (bvalid  && !bready)  |=> $stable(bresp)  && bvalid)
+               else $error("AXIL: B channel changed or withdrawn while stalled");
+  a_r_stable:  assert property (@(posedge clk) disable iff (!rst_n) (rvalid  && !rready)  |=> $stable(rdata)  && rvalid)
+               else $error("AXIL: R channel changed or withdrawn while stalled");
   a_no_x_valid: assert property (@(posedge clk) disable iff (!rst_n)
-                  !$isunknown({awvalid, wvalid, bvalid, arvalid, rvalid}));
+                  !$isunknown({awvalid, wvalid, bvalid, arvalid, rvalid}))
+                else $error("AXIL: X/Z on a VALID");
   // protocol covers (FLOW.md §3); plain counters, xsim 2022.2 ignores `cover property`
   int unsigned n_c_wr, n_c_rd, n_c_aw_wait, n_c_b_wait;
   always @(posedge clk) if (rst_n) begin

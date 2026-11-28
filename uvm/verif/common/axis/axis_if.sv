@@ -32,7 +32,8 @@ interface axis_if (input logic clk, input logic rst_n);
   a_hold_last: assert property (@(posedge clk) disable iff (!rst_n)
             (tvalid && !tready) |=> $stable(tlast))
           else if (tlast_waive) n_tlast_unstable++; else $error("AXIS: TLAST changed while stalled");
-  a_no_x: assert property (@(posedge clk) disable iff (!rst_n) tvalid |-> !$isunknown({tdata, tlast}));
+  a_no_x: assert property (@(posedge clk) disable iff (!rst_n) tvalid |-> !$isunknown({tdata, tlast}))
+          else $error("AXIS: X/Z on the bus while TVALID: tdata=%h tlast=%b", tdata, tlast);
   // protocol covers (FLOW.md §3); totals over all instances in cov_report.py. Plain counters:
   // xsim 2022.2 ignores `cover property` ("not supported yet for simulation")
   int unsigned n_c_stall, n_c_last, n_c_b2b, n_c_last_stall;

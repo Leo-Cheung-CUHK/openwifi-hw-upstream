@@ -310,6 +310,15 @@ def compile_tb(a, var, tools, tb, d):
     return True
 
 
+def ensure_lists(a, var, tools, tests):
+    """the vector lists the tests' ARGS_<test> name ($(BUILD)/lists/*.list): run rxlists if one is missing"""
+    need = [m for t in tests for m in re.findall(r"\$\(BUILD\)/(lists/\S+)", var.get(f"ARGS_{t}", ""))]
+    if not tools.dry and any(not os.path.isfile(os.path.join(a.build, m)) for m in need):
+        print("vector lists missing: running rxlists")
+        return cmd_rxlists(a, var, tools) == 0
+    return True
+
+
 def run_test(a, var, tools, tb, test, seed, plusargs, verb, compiled=False):
     t = tb_table(var)
     if tb not in t: sys.exit(f"xsim.py: unknown TB {tb} (one of {', '.join(TBS)})")
@@ -320,6 +329,8 @@ def run_test(a, var, tools, tb, test, seed, plusargs, verb, compiled=False):
     # xsimk.exe while another test of the same snapshot is running (XSIM 43-3345)
     if not compiled and not compile_tb(a, var, tools, tb, d):
         return "COMPILE-FAIL", None
+    if not compiled and not ensure_lists(a, var, tools, [test]):
+        return "FAIL", None
     work = os.path.join(a.build, "xsim", tb + vdir(a))
     rdir = os.path.join(a.build, "xsim", "run" + vdir(a), f"{tb}_{test}_{seed}")
     os.makedirs(rdir, exist_ok=True)
@@ -338,7 +349,9 @@ def run_test(a, var, tools, tb, test, seed, plusargs, verb, compiled=False):
         return "DRY", log
     txt = open(log, encoding="utf-8", errors="replace").read() if os.path.isfile(log) else ""
     passed = ok and re.search(r"UVM_ERROR\s*:\s*0\b", txt) and re.search(r"UVM_FATAL\s*:\s*0\b", txt) \
-        and not re.search(r"assertion.*fail|Error: Assertion", txt, re.I)
+        and not re.search(r"assertion.*fail|^Error: |^Time: \d+ \w+ Started: \d+", txt, re.I | re.M)
+    # ^Error:    = $error / failed assertion with an action block (xsim prints "Error: <msg>")
+    # ^Time: .. Started: = xsim's line for a failed assertion without an action block
     return ("PASS" if passed else "FAIL"), log
 
 
@@ -365,6 +378,7 @@ def cmd_regress(a, var, tools):
             # compile once, then the tests side by side (each has its own run dir, log and wdb)
             if not compile_tb(a, var, tools, tb, t[tb]):
                 rows.append((tb, tests[0], "COMPILE-FAIL", 0, None)); fail = 1; continue
+            ensure_lists(a, var, tools, tests)        # once, before the parallel runs
             # xsim -R writes xsim.dir/<snap>/xsim_script.tcl (shared by all runs of the snapshot)
             # and sources it at start-up: stagger the starts so no run reads another's arguments
             def staggered(ix):

@@ -37,6 +37,8 @@ interface phy_rx_if (input logic clk, input logic rst_n);
   endclocking
 
   // strobes are single-cycle pulses in openofdm_rx
-  a_fcs_pulse: assert property (@(posedge clk) disable iff (!rst_n) fcs_out_strobe |=> !fcs_out_strobe);
-  a_hdr_pulse: assert property (@(posedge clk) disable iff (!rst_n) pkt_header_valid_strobe |=> !pkt_header_valid_strobe);
+  a_fcs_pulse: assert property (@(posedge clk) disable iff (!rst_n) fcs_out_strobe |=> !fcs_out_strobe)
+               else $error("PHY_RX: fcs_out_strobe longer than one cycle");
+  a_hdr_pulse: assert property (@(posedge clk) disable iff (!rst_n) pkt_header_valid_strobe |=> !pkt_header_valid_strobe)
+               else $error("PHY_RX: pkt_header_valid_strobe longer than one cycle");
 endinterface
