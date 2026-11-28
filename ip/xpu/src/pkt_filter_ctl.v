@@ -53,6 +53,7 @@
     wire is_blkack;
     wire is_rts;
     wire is_ack;
+    wire is_cts;
     wire is_cfend;
     wire is_cfend_cfack;
     wire is_pspoll;
@@ -67,6 +68,7 @@
     assign except_pspoll  = (FC_type==1)&&(FC_subtype!=10);
     assign is_rts         = (FC_type==1)&&(FC_subtype==11);
     assign is_ack         = (FC_type==1)&&(FC_subtype==13);
+    assign is_cts         = (FC_type==1)&&(FC_subtype==12); // uvm finding M: 14-byte frame like ACK
     assign is_cfend       = (FC_type==1)&&(FC_subtype==14);
     assign is_cfend_cfack = (FC_type==1)&&(FC_subtype==15);
 
@@ -197,7 +199,7 @@
                         filter_bssid_valid<=filter_bssid_valid;
                         end
 
-                    if (is_ctrlwrapper || is_ack) 
+                    if (is_ctrlwrapper || is_ack || is_cts) // uvm finding M: CTS (14 bytes) was ABNORMAL
                         begin
                         filter_state <= FILTER_ACTION;
                         end
