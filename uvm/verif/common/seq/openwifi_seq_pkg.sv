@@ -41,11 +41,14 @@ package openwifi_seq_pkg;
     openofdm_rx_regs rb;
     int unsigned min_plateau = 100, max_len_th = 1700, min_len_th = 14;
     int unsigned small_eq_out_counter_th = 48, fft_win_shift = 4, phase_offset_abs_th = 11;
-    bit [31:0]   power_thres = 0;       // driver sets it later from RSSI calibration; 0 = always trigger
+    bit [10:0]   power_thres = 0;       // driver sets it later from RSSI calibration; 0 = always trigger
+    // POWER_THRES[23:16] is signal_watchdog's DC running-sum threshold: 0 makes |sum| >= th always
+    // true, i.e. a permanent receiver reset (nothing decodes). 64 as in openofdm_rx dot11_tb.v.
+    bit [7:0]    dc_running_sum_th = 64;
     function new(string name = "openofdm_rx_init_seq"); super.new(name); endfunction
     task body();
       wr(rb, "ENABLE", 1);
-      wr(rb, "POWER_THRES", power_thres);
+      wr(rb, "POWER_THRES", (32'(dc_running_sum_th) << 16) | power_thres);
       wr(rb, "MIN_PLATEAU", min_plateau);
       wr(rb, "SOFT_DECODING", (max_len_th << 16) | (min_len_th << 12) | 1);
       wr(rb, "FFT_WIN_SHIFT", (small_eq_out_counter_th << 4) | fft_win_shift);
