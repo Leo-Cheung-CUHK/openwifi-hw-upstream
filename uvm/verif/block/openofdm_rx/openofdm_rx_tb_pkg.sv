@@ -192,11 +192,11 @@ package openofdm_rx_tb_pkg;
         void'(env.sb.close_window());
       end
     endtask
-    // +RX_VEC_LIST=<file with one path per line>  or  +RX_VEC=<single file>
+    // +RX_VEC=<single file> (wins over the test's default list)  or  +RX_VEC_LIST=<file, one path per line>
     function void load_from_plusargs();
       string lst, one; int fd; string line;
       if ($value$plusargs("RX_VEC=%s", one)) files.push_back(one);
-      if ($value$plusargs("RX_VEC_LIST=%s", lst)) begin
+      else if ($value$plusargs("RX_VEC_LIST=%s", lst)) begin
         fd = $fopen(lst, "r");
         if (fd == 0) `uvm_fatal("VEC", {"cannot open ", lst})
         while ($fgets(line, fd)) begin

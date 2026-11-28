@@ -42,6 +42,33 @@ module tb_openofdm_rx;
     .s00_axi_araddr(axil.araddr[6:0]), .s00_axi_arprot(axil.arprot), .s00_axi_arvalid(axil.arvalid), .s00_axi_arready(axil.arready),
     .s00_axi_rdata(axil.rdata), .s00_axi_rresp(axil.rresp), .s00_axi_rvalid(axil.rvalid), .s00_axi_rready(axil.rready));
 
+  // +VIT_TRACE: one line per Viterbi run (between two decoder resets): inputs, outputs, latency
+  // of the first output, a hash of the inputs and the first 256 decoded bits. Compares the
+  // Xilinx viterbi_v7_0 model with ip/sova_dec (VIT=sova) on the same stimulus.
+  bit vit_trace;
+  initial vit_trace = $test$plusargs("VIT_TRACE");
+  int unsigned vt_seg, vt_in, vt_out, vt_cyc, vt_lat; bit [31:0] vt_hash; bit [255:0] vt_bits;
+  always @(posedge clk) if (vit_trace) begin
+    if (dut.dot11_i.ofdm_decoder_inst.vit_clr) begin
+      if (vt_in) $display("VIT seg %0d @%0t: in=%0d out=%0d lat=%0d inhash=%08h bits=%064h", vt_seg, $time,
+                          vt_in, vt_out, vt_lat, vt_hash, vt_bits);
+      if (vt_in) vt_seg++;
+      vt_in = 0; vt_out = 0; vt_cyc = 0; vt_lat = 0; vt_hash = 32'h811c9dc5; vt_bits = '0;
+    end else begin
+      vt_cyc++;
+      if (dut.dot11_i.ofdm_decoder_inst.conv_in_stb_dly) begin
+        vt_hash = (vt_hash ^ {24'b0, dut.dot11_i.ofdm_decoder_inst.conv_erase_dly,
+                   dut.dot11_i.ofdm_decoder_inst.conv_in1_dly, dut.dot11_i.ofdm_decoder_inst.conv_in0_dly}) * 32'h01000193;
+        vt_in++;
+      end
+      if (dut.dot11_i.ofdm_decoder_inst.m_axis_data_tvalid) begin
+        if (vt_out == 0) vt_lat = vt_cyc;
+        if (vt_out < 256) vt_bits[255 - vt_out] = dut.dot11_i.ofdm_decoder_inst.conv_decoder_out;
+        vt_out++;
+      end
+    end
+  end
+
   initial begin
     uvm_config_db#(virtual axil_if)::set(null, "uvm_test_top.env.axil*", "vif", axil);
     uvm_config_db#(virtual iq_if)::set(null, "uvm_test_top.env.iq*", "vif", iq);

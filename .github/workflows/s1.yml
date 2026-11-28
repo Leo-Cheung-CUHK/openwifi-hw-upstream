@@ -92,6 +92,17 @@ jobs:
       - name: Regression
         if: env.WHAT == 'regress'
         run: |
+          # a push to s1/** may carry uvm/sim/s1_push_args.txt: one xsim.py command per line
+          # (e.g. "--vit sova run --tb openofdm_rx --test orx_vectors_test --plusargs +VIT_TRACE")
+          $f = 'uvm/sim/s1_push_args.txt'
+          if ('${{ github.event_name }}' -eq 'push' -and (Test-Path $f)) {
+            $rc = 0
+            foreach ($l in (Get-Content $f | Where-Object { $_ -match '\S' -and $_ -notmatch '^\s*#' })) {
+              $a = $l.Trim() -split '\s+'
+              "== xsim.py $l"; python uvm/sim/xsim.py @a; if ($LASTEXITCODE) { $rc = $LASTEXITCODE }
+            }
+            exit $rc
+          }
           $a = @('regress', '--jobs', $env:JOBS)
           if ('${{ inputs.plusargs }}') { $a += @('--plusargs', '${{ inputs.plusargs }}') }
           foreach ($t in ($env:TBS -split '\s+' | Where-Object { $_ })) { $a += @('--tb', $t) }
@@ -113,6 +124,7 @@ jobs:
           name: s1-logs
           path: |
             ${{ env.OW_BUILD_DIR }}/xsim/run/**/sim.log
+            ${{ env.OW_BUILD_DIR }}/xsim/run_sova/**/sim.log
             ${{ env.OW_BUILD_DIR }}/xsim/*/*.log
             ${{ env.OW_BUILD_DIR }}/xsim/regress.md
             ${{ env.OW_BUILD_DIR }}/xsim/coverage.md

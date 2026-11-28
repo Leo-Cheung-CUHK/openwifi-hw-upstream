@@ -326,8 +326,9 @@ def run_test(a, var, tools, tb, test, seed, plusargs, verb, compiled=False):
     log = os.path.join(rdir, "sim.log")
     pa = ["-testplusarg", f"UVM_TESTNAME={test}", "-testplusarg", f"UVM_VERBOSITY={verb}"]
     # per-test defaults from sim/Makefile ARGS_<test> (e.g. the vector list), then the caller's
-    targs = var.get(f"ARGS_{test}", "").replace("$(BUILD)", fwd(a.build)).replace("$(OW_UVM)", fwd(OW_UVM))
-    for p in targs.split() + list(plusargs):
+    sub = lambda x: x.replace("$(BUILD)", fwd(a.build)).replace("$(OW_UVM)", fwd(OW_UVM)).replace("$(OW_HW)", fwd(a.hw))
+    targs = sub(var.get(f"ARGS_{test}", ""))
+    for p in targs.split() + [sub(x) for x in plusargs]:
         pa += ["-testplusarg", p.lstrip("+")]
     # waveform database per run dir, so tests of one TB can run in parallel (regress --jobs)
     ok = tools.run("xsim", [f"{d['top']}_snap", "-R", "-sv_seed", str(seed), "-log", fwd(log),
