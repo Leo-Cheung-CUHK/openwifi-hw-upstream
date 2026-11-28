@@ -21,6 +21,9 @@ on:
       plusargs:
         description: 'extra plusargs, e.g. +N_PKT=50'
         default: ''
+      jobs:
+        description: 'regress: tests of one TB in parallel (xsim.py regress --jobs)'
+        default: '3'
 
 permissions:
   contents: read
@@ -78,9 +81,18 @@ jobs:
       - name: Regression
         if: inputs.what == 'regress'
         run: |
-          $a = @('regress', '--plusargs', '${{ inputs.plusargs }}')
+          $a = @('regress', '--jobs', '${{ inputs.jobs }}', '--plusargs', '${{ inputs.plusargs }}')
           foreach ($t in ('${{ inputs.tb }}' -split '\s+' | Where-Object { $_ })) { $a += @('--tb', $t) }
           python uvm/sim/xsim.py @a; exit $LASTEXITCODE
+
+      - name: Functional coverage (FLOW.md §3 targets)
+        if: always() && inputs.what == 'regress'
+        run: |
+          python uvm/sim/xsim.py cov
+          $rc = $LASTEXITCODE
+          $md = Join-Path $env:OW_BUILD_DIR 'xsim/coverage.md'
+          if ($env:GITHUB_STEP_SUMMARY -and (Test-Path $md)) { Get-Content $md | Add-Content $env:GITHUB_STEP_SUMMARY }
+          exit $rc
 
       - name: Logs
         if: always() && inputs.what != 'env'
@@ -91,6 +103,7 @@ jobs:
             ${{ env.OW_BUILD_DIR }}/xsim/run/**/sim.log
             ${{ env.OW_BUILD_DIR }}/xsim/*/*.log
             ${{ env.OW_BUILD_DIR }}/xsim/regress.md
+            ${{ env.OW_BUILD_DIR }}/xsim/coverage.md
             ${{ env.OW_BUILD_DIR }}/xip/xip.log
           if-no-files-found: ignore
           retention-days: 14
