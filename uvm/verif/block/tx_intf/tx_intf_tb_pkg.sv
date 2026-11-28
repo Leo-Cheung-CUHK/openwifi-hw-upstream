@@ -468,7 +468,7 @@ package tx_intf_tb_pkg;
         bit [15:0] dur = 16'($urandom_range(2000, 100)); int unsigned cts_hw;
         bit [3:0] data_code;
         time gap;
-        data_code = d.ht ? 4'(d.rate_hw) : legacy_rate_code(d.rate_hw);   // not an initializer: it reads d (xsim, finding 10)
+        data_code = d.ht ? 4'(d.rate_hw) : legacy_rate_code(d.rate_hw);
         cts_hw = traffic ? (d.ht ? 4 : d.rate_hw) : rates[r];
         // fields set after a plain randomize(): xsim 2022.2 null-object error on randomize() with {} here (finding 10)
         if (!c.randomize()) `uvm_fatal("RAND", "cts")

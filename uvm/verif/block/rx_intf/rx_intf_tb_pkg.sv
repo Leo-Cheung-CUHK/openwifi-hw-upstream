@@ -197,7 +197,7 @@ package rx_intf_tb_pkg;
     function new(string name, uvm_component parent); super.new(name, parent); endfunction
     task run_phase(uvm_phase phase);
       int unsigned n = 20;
-      phy_rx_item it; rxi_expect e;   // declared here, created per frame (xsim 2022.2, finding 10)
+      phy_rx_item it; rxi_expect e;
       phase.raise_objection(this);
       init_regs();
       void'($value$plusargs("N_PKT=%d", n));
