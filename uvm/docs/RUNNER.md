@@ -126,8 +126,16 @@ public, so:
 * Settings → Actions → General: "Require approval for all external contributors";
 * the runner service account should not be an administrator.
 
-### 2.6 What is not verified yet
+### 2.6 Status on the desktop (2026-11-27)
 
-`xsim.py` is tested in S0 against a fake Vivado (file lists, order, grouping, caching). The real
-tools' behaviour on Windows (option spelling in `-f` files, `.bat` exit codes, licence checkout,
-`export_simulation` paths) is checked by the first run of §2.3. Expect to fix small things there.
+`xsim.py` is tested in S0 against a fake Vivado (file lists, order, grouping, caching). On the
+desktop (Windows, Vivado 2022.2, checkout `D:\AI_Openwifi\ow`):
+* `openofdm_tx` `otx_reg_reset_test` PASS.
+* `openofdm_tx` `otx_rate_sweep_test` with `+OTX_REPLAY=uvm/vectors/otx_rate_sweep/fixed`: PASS
+  (9.5 ms simulated, ~9 min wall), `check_tx_dumps.py` 72/72, and `compare_golden.py`
+  **72/72 frames bit-identical to the Verilator golden set** — the cross-simulator check.
+* Needed on the way: ARCHITECTURE.md findings 7 and 8 (xvlog/xelab), and `iq_agent` calling
+  `super.build_phase` (its passive mode was ignored; the driver fought the TB-top `assign` on
+  `iqo.valid`, which xsim resolved as a stuck 1).
+* Not run yet on xsim: the other five block TBs and chip (`xip` + Viterbi licence for
+  openofdm_rx and chip).
