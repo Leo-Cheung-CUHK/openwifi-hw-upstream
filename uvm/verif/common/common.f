@@ -6,6 +6,7 @@ ${OW_UVM}/verif/common/phy/phy_rx_if.sv
 ${OW_UVM}/verif/common/phy/phy_tx_if.sv
 ${OW_UVM}/verif/common/irq/irq_if.sv
 ${OW_UVM}/verif/common/axil/axil_pkg.sv
+${OW_UVM}/verif/common/cov/ow_cov_pkg.sv
 ${OW_UVM}/verif/common/axis/axis_pkg.sv
 ${OW_UVM}/verif/common/iq/iq_pkg.sv
 ${OW_UVM}/verif/common/wifi/wifi_pkg.sv

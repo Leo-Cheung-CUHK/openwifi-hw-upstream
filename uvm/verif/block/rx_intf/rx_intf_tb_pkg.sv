@@ -109,7 +109,7 @@ package rx_intf_tb_pkg;
 
   class rxi_env extends uvm_env;
     `uvm_component_utils(rxi_env)
-    axil_agent axil; axis_agent dma; iq_agent adc; iq_agent bb; iq_agent txl; phy_rx_agent prx; rxi_scoreboard sb;
+    axil_agent axil; axis_agent dma; iq_agent adc; iq_agent bb; iq_agent txl; phy_rx_agent prx; rxi_scoreboard sb; ow_cov_pkg::ral_access_cov rcov;
     rx_intf_regs regs; axil_reg_adapter adapter;
     virtual rx_side_if side; virtual irq_if irq;
     function new(string name, uvm_component parent); super.new(name, parent); endfunction
@@ -137,11 +137,13 @@ package rx_intf_tb_pkg;
       prx  = phy_rx_agent::type_id::create("prx", this);
       sb   = rxi_scoreboard::type_id::create("sb", this);
       regs = rx_intf_regs::type_id::create("regs"); regs.configure(null); regs.build();
+      rcov = ow_cov_pkg::ral_access_cov::type_id::create("rcov", this); rcov.blk = regs;
       adapter = axil_reg_adapter::type_id::create("adapter");
       if (!uvm_config_db#(virtual rx_side_if)::get(this, "", "side", side)) `uvm_fatal("NOVIF", "rx_side_if")
       if (!uvm_config_db#(virtual irq_if)::get(this, "", "irq", irq)) `uvm_fatal("NOVIF", "irq_if")
     endfunction
     function void connect_phase(uvm_phase phase);
+      axil.mon.ap.connect(rcov.analysis_export);
       regs.default_map.set_sequencer(axil.sqr, adapter);
       regs.default_map.set_auto_predict(1);
       dma.mon.ap.connect(sb.dma_imp);

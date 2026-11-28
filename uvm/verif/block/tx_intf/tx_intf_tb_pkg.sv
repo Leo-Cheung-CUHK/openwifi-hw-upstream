@@ -127,7 +127,7 @@ package tx_intf_tb_pkg;
 
   class txi_env extends uvm_env;
     `uvm_component_utils(txi_env)
-    axil_agent axil; axis_agent dma; phy_tx_agent acc; iq_agent dac; txi_scoreboard sb;
+    axil_agent axil; axis_agent dma; phy_tx_agent acc; iq_agent dac; txi_scoreboard sb; ow_cov_pkg::ral_access_cov rcov;
     tx_intf_regs regs; axil_reg_adapter adapter;
     virtual interface irq_if irq;
     virtual xpu_stub_ctl_if xctl;
@@ -152,11 +152,13 @@ package tx_intf_tb_pkg;
       dac  = iq_agent::type_id::create("dac", this);
       sb   = txi_scoreboard::type_id::create("sb", this);
       regs = tx_intf_regs::type_id::create("regs"); regs.configure(null); regs.build();
+      rcov = ow_cov_pkg::ral_access_cov::type_id::create("rcov", this); rcov.blk = regs;
       adapter = axil_reg_adapter::type_id::create("adapter");
       if (!uvm_config_db#(virtual irq_if)::get(this, "", "irq", irq)) `uvm_fatal("NOVIF", "irq_if")
       if (!uvm_config_db#(virtual xpu_stub_ctl_if)::get(this, "", "xctl", xctl)) `uvm_fatal("NOVIF", "xpu_stub_ctl_if")
     endfunction
     function void connect_phase(uvm_phase phase);
+      axil.mon.ap.connect(rcov.analysis_export);
       regs.default_map.set_sequencer(axil.sqr, adapter);
       regs.default_map.set_auto_predict(1);
       acc.mon.ap.connect(sb.obs_imp);

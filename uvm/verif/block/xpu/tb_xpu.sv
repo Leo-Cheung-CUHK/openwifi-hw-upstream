@@ -68,4 +68,31 @@ module tb_xpu;
     if ($test$plusargs("XPU_TRACE")) $display("%t XPU_TRACE2 started %b done %b fifo_empty %b search %b try_complete %b high_trigger %b", $time,
       txs.phy_tx_started, txs.phy_tx_done, txs.tx_iq_fifo_empty, dut.tx_on_detection_i.search_indication, txs.tx_try_complete, txs.high_trigger);
   end
+  // ---- functional coverage (FLOW.md §3, merged by cov_report.py) ----
+  // CSMA/CA backoff states, packet-filter rules that let a frame through, queue x need_ack
+  localparam string CSMA_ST[7] = '{"IDLE", "CH_BUSY", "WAIT_1", "WAIT_2", "RUN", "SUSPEND", "WAIT_FOR_OWN"};
+  localparam int    FLT_BIT[10] = '{1, 4, 5, 6, 7, 8, 9, 10, 11, 13};
+  localparam string FLT_NAME[10] = '{"ALLMULTI", "BCN_PRBRESP_PROMISC", "CONTROL", "OTHER_BSS", "PSPOLL", "PROBE_REQ",
+                                     "UNICAST_FOR_US", "BROADCAST_ALL_ONE", "BROADCAST_ALL_ZERO", "MONITOR_ALL"};
+  initial begin
+    foreach (CSMA_ST[i]) ow_cov_pkg::ow_cov::declare("xpu_csma_state", CSMA_ST[i]);
+    foreach (FLT_NAME[i]) ow_cov_pkg::ow_cov::declare("xpu_filter", {FLT_NAME[i], ".pass"});
+    ow_cov_pkg::ow_cov::declare("xpu_filter", "blocked");
+    for (int q = 0; q < 4; q++) for (int a = 0; a < 2; a++) ow_cov_pkg::ow_cov::declare("xpu_tx_queue", $sformatf("q%0d_ack%0d", q, a));
+  end
+  logic [2:0] cov_st_d = 7; logic cov_flt_d = 0, cov_trig_d = 0;
+  always @(posedge clk) if (rst_n) begin
+    cov_st_d <= dut.csma_ca_i.backoff_state; cov_flt_d <= dut.block_rx_dma_to_ps_valid; cov_trig_d <= txs.high_trigger;
+    if (dut.csma_ca_i.backoff_state != cov_st_d && dut.csma_ca_i.backoff_state < 7)
+      ow_cov_pkg::ow_cov::hit("xpu_csma_state", CSMA_ST[dut.csma_ca_i.backoff_state]);
+    if (dut.block_rx_dma_to_ps_valid && !cov_flt_d) begin
+      if (dut.block_rx_dma_to_ps) ow_cov_pkg::ow_cov::hit("xpu_filter", "blocked");
+      else foreach (FLT_BIT[i])
+        if (FLT_BIT[i] == 13 ? dut.pkt_filter_ctl_i.filter_cfg[13] : dut.pkt_filter_ctl_i.allow_rx_dma_to_ps_reg[FLT_BIT[i]])
+          ow_cov_pkg::ow_cov::hit("xpu_filter", {FLT_NAME[i], ".pass"});
+    end
+    if (txs.high_trigger && !cov_trig_d)
+      ow_cov_pkg::ow_cov::hit("xpu_tx_queue", $sformatf("q%0d_ack%0d", txs.tx_queue_idx, txs.tx_pkt_need_ack));
+  end
+  final ow_cov_pkg::ow_cov::dump();
 endmodule

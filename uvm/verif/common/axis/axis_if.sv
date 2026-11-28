@@ -33,4 +33,13 @@ interface axis_if (input logic clk, input logic rst_n);
             (tvalid && !tready) |=> $stable(tlast))
           else if (tlast_waive) n_tlast_unstable++; else $error("AXIS: TLAST changed while stalled");
   a_no_x: assert property (@(posedge clk) disable iff (!rst_n) tvalid |-> !$isunknown({tdata, tlast}));
+  // SVA covers (FLOW.md §3 "cover properties hit"); totals over all instances in cov_report.py
+  int unsigned n_c_stall, n_c_last, n_c_b2b, n_c_last_stall;
+  c_stall: cover property (@(posedge clk) disable iff (!rst_n) tvalid && !tready) n_c_stall++;
+  c_last:  cover property (@(posedge clk) disable iff (!rst_n) tvalid && tready && tlast) n_c_last++;
+  logic hs_d = 0; always @(posedge clk) hs_d <= tvalid && tready;
+  c_b2b:   cover property (@(posedge clk) disable iff (!rst_n) hs_d && tvalid && tready) n_c_b2b++;
+  c_last_stall: cover property (@(posedge clk) disable iff (!rst_n) tvalid && tlast && !tready) n_c_last_stall++;
+  final $display("OWCOV sva axis.stall %0d\nOWCOV sva axis.last %0d\nOWCOV sva axis.b2b %0d\nOWCOV sva axis.last_stall %0d",
+                 n_c_stall, n_c_last, n_c_b2b, n_c_last_stall);
 endinterface

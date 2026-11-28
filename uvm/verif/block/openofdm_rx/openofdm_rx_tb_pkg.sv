@@ -124,7 +124,7 @@ package openofdm_rx_tb_pkg;
 
   class orx_env extends uvm_env;
     `uvm_component_utils(orx_env)
-    axil_agent axil; iq_agent iq; phy_rx_agent prx; orx_scoreboard sb;
+    axil_agent axil; iq_agent iq; phy_rx_agent prx; orx_scoreboard sb; ow_cov_pkg::ral_access_cov rcov;
     openofdm_rx_regs regs; axil_reg_adapter adapter;
     function new(string name, uvm_component parent); super.new(name, parent); endfunction
     function void build_phase(uvm_phase phase);
@@ -138,9 +138,11 @@ package openofdm_rx_tb_pkg;
       prx  = phy_rx_agent::type_id::create("prx", this);
       sb   = orx_scoreboard::type_id::create("sb", this);
       regs = openofdm_rx_regs::type_id::create("regs"); regs.configure(null); regs.build();
+      rcov = ow_cov_pkg::ral_access_cov::type_id::create("rcov", this); rcov.blk = regs;
       adapter = axil_reg_adapter::type_id::create("adapter");
     endfunction
     function void connect_phase(uvm_phase phase);
+      axil.mon.ap.connect(rcov.analysis_export);
       regs.default_map.set_sequencer(axil.sqr, adapter);
       regs.default_map.set_auto_predict(1);
       prx.mon.ap.connect(sb.analysis_export);

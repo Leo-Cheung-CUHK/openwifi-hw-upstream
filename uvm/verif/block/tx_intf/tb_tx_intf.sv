@@ -93,4 +93,5 @@ module tb_tx_intf;
     @(posedge clk iff (acc.phy_tx_start || acc.phy_tx_done || tx_try_complete));
     $display("%t TXI_TRACE start %b done %b try_complete %b tx_bb %b", $time, acc.phy_tx_start, acc.phy_tx_done, tx_try_complete, tx_bb_is_ongoing);
   end
+  final ow_cov_pkg::ow_cov::dump();   // functional coverage lines for cov_report.py
 endmodule

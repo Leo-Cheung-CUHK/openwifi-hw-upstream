@@ -55,4 +55,5 @@ module tb_side_ch;
     uvm_config_db#(virtual side_ch_side_if)::set(null, "uvm_test_top.env", "side", side);
     run_test("sch_csi_test");
   end
+  final ow_cov_pkg::ow_cov::dump();   // functional coverage lines for cov_report.py
 endmodule

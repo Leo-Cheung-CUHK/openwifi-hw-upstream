@@ -199,7 +199,7 @@ package xpu_tb_pkg;
 
   class xpu_env extends uvm_env;
     `uvm_component_utils(xpu_env)
-    axil_agent axil; phy_rx_agent prx; iq_agent ddc; xpu_phy_model rsp; xpu_scoreboard sb;
+    axil_agent axil; phy_rx_agent prx; iq_agent ddc; xpu_phy_model rsp; xpu_scoreboard sb; ow_cov_pkg::ral_access_cov rcov;
     xpu_regs regs; axil_reg_adapter adapter;
     function new(string name, uvm_component parent); super.new(name, parent); endfunction
     function void build_phase(uvm_phase phase);
@@ -215,9 +215,11 @@ package xpu_tb_pkg;
       sb   = xpu_scoreboard::type_id::create("sb", this);
       if (!uvm_config_db#(virtual xpu_tx_side_if)::get(this, "", "txside", rsp.vif)) `uvm_fatal("NOVIF", "xpu_tx_side_if")
       regs = xpu_regs::type_id::create("regs"); regs.configure(null); regs.build();
+      rcov = ow_cov_pkg::ral_access_cov::type_id::create("rcov", this); rcov.blk = regs;
       adapter = axil_reg_adapter::type_id::create("adapter");
     endfunction
     function void connect_phase(uvm_phase phase);
+      axil.mon.ap.connect(rcov.analysis_export);
       regs.default_map.set_sequencer(axil.sqr, adapter);
       regs.default_map.set_auto_predict(1);
       prx.mon.ap.connect(sb.rx_imp);

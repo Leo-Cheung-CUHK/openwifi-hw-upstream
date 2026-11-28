@@ -39,4 +39,5 @@ module tb_openofdm_tx;
     uvm_config_db#(virtual iq_if)::set(null, "uvm_test_top.env.iqm*", "vif", iqo);
     run_test("otx_random_test");
   end
+  final ow_cov_pkg::ow_cov::dump();   // functional coverage lines for cov_report.py
 endmodule

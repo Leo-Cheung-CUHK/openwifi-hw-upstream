@@ -243,8 +243,22 @@ package wifi_pkg;
         ignore_bins bad_ht  = binsof(cp_fmt.ht) && binsof(cp_rate) intersect {[8:11]}; }
       x_ht_sgi: cross cp_rate, cp_sgi iff (f.ht);
     endgroup
-    function new(string name, uvm_component parent); super.new(name, parent); cg = new(); endfunction
-    function void write(wifi_frame t); f = t; cg.sample(); endfunction
+    static string LEN_BIN[5] = '{"min", "short", "mid", "long", "jumbo"};
+    static function string len_bin(int unsigned n);
+      return n <= 24 ? "min" : n <= 100 ? "short" : n <= 600 ? "mid" : n <= 1500 ? "long" : "jumbo";
+    endfunction
+    function new(string name, uvm_component parent);
+      super.new(name, parent); cg = new();
+      // rate x length bin x GI, as merged by cov_report.py (space "wifi_frame", target 100 %)
+      for (int r = 4; r <= 11; r++) foreach (LEN_BIN[l]) ow_cov_pkg::ow_cov::declare("wifi_frame", $sformatf("L%0d_%s", r, LEN_BIN[l]));
+      for (int r = 0; r <= 7; r++) foreach (LEN_BIN[l]) for (int g = 0; g < 2; g++)
+        ow_cov_pkg::ow_cov::declare("wifi_frame", $sformatf("H%0d_%s_gi%0d", r, LEN_BIN[l], g));
+    endfunction
+    function void write(wifi_frame t);
+      f = t; cg.sample();
+      if (t.ht) ow_cov_pkg::ow_cov::hit("wifi_frame", $sformatf("H%0d_%s_gi%0d", t.rate_hw, len_bin(t.mpdu_len), t.sgi));
+      else      ow_cov_pkg::ow_cov::hit("wifi_frame", $sformatf("L%0d_%s", t.rate_hw, len_bin(t.mpdu_len)));
+    endfunction
     function void report_phase(uvm_phase phase);
       `uvm_info("WIFI_COV", $sformatf("PHY format coverage %.1f%%", cg.get_inst_coverage()), UVM_NONE)
     endfunction

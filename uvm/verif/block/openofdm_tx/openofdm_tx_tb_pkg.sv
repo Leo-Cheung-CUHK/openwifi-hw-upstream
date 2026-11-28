@@ -87,7 +87,7 @@ package openofdm_tx_tb_pkg;
 
   class otx_env extends uvm_env;
     `uvm_component_utils(otx_env)
-    axil_agent axil; phy_tx_agent ptx; iq_agent iqm; otx_scoreboard sb; wifi_frame_cov cov;
+    axil_agent axil; phy_tx_agent ptx; iq_agent iqm; otx_scoreboard sb; wifi_frame_cov cov; ow_cov_pkg::ral_access_cov rcov;
     openofdm_tx_regs regs; axil_reg_adapter adapter;
     function new(string name, uvm_component parent); super.new(name, parent); endfunction
     function void build_phase(uvm_phase phase);
@@ -109,9 +109,11 @@ package openofdm_tx_tb_pkg;
       sb   = otx_scoreboard::type_id::create("sb", this);
       cov  = wifi_frame_cov::type_id::create("cov", this);
       regs = openofdm_tx_regs::type_id::create("regs"); regs.configure(null); regs.build();
+      rcov = ow_cov_pkg::ral_access_cov::type_id::create("rcov", this); rcov.blk = regs;
       adapter = axil_reg_adapter::type_id::create("adapter");
     endfunction
     function void connect_phase(uvm_phase phase);
+      axil.mon.ap.connect(rcov.analysis_export);
       regs.default_map.set_sequencer(axil.sqr, adapter);
       regs.default_map.set_auto_predict(1);
       ptx.srv.sent_ap.connect(sb.sent_imp);

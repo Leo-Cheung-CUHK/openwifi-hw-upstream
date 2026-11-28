@@ -48,4 +48,5 @@ module tb_openofdm_rx;
     uvm_config_db#(virtual phy_rx_if)::set(null, "uvm_test_top.env.prx*", "vif", prx);
     run_test("orx_vectors_test");
   end
+  final ow_cov_pkg::ow_cov::dump();   // functional coverage lines for cov_report.py
 endmodule

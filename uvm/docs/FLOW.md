@@ -86,9 +86,12 @@ Two additions tie S2 to the later stages:
 * **Frame-set export.** Every TX test writes its frames as `frame_NNNN.json` (already done for
   openofdm_tx). S6 replays the same JSON sets on hardware, so the expected results are identical.
 
-Coverage closure targets (S1/S2 nightly, merged with `xcrg`): `wifi_frame_cov` 100 % of
-rate × length-bin × GI bins; RAL access 100 %; xpu CSMA states, filter flags, queue × priority ≥ 95 %;
-SVA cover properties hit.
+Coverage closure targets (S1/S2 nightly): `wifi_frame` 100 % of rate × length-bin × GI bins; RAL
+access 100 % (every register read, every writable one written); xpu CSMA states, filter rules,
+queue × need_ack ≥ 95 %; SVA cover properties hit. Collected simulator-independently: TBs print
+`OWCOV <space> <bin> <hits>` lines (`verif/common/cov/ow_cov_pkg.sv`, interface covers), and
+`scripts/cov_report.py` (`xsim.py cov`) merges all runs and checks the targets (instead of `xcrg`,
+so Verilator runs count too).
 
 ---
 

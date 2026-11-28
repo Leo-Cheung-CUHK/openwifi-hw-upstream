@@ -85,4 +85,5 @@ module tb_rx_intf;
       dut.rx_intf_pl_to_m_axis_i.block_rx_dma_to_ps_valid, dut.rx_intf_pl_to_m_axis_i.block_rx_dma_to_ps,
       dut.rx_intf_pl_to_m_axis_i.start_1trans_mode, dut.m00_axis_tvalid, dut.m00_axis_tready);
   end
+  final ow_cov_pkg::ow_cov::dump();   // functional coverage lines for cov_report.py
 endmodule

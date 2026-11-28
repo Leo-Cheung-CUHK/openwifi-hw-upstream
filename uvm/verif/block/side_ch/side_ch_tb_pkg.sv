@@ -63,7 +63,7 @@ package side_ch_tb_pkg;
 
   class sch_env extends uvm_env;
     `uvm_component_utils(sch_env)
-    axil_agent axil; axis_agent dma; phy_rx_agent prx; sch_scoreboard sb;
+    axil_agent axil; axis_agent dma; phy_rx_agent prx; sch_scoreboard sb; ow_cov_pkg::ral_access_cov rcov;
     side_ch_regs regs; axil_reg_adapter adapter; virtual side_ch_side_if side;
     function new(string name, uvm_component parent); super.new(name, parent); endfunction
     function void build_phase(uvm_phase phase);
@@ -77,10 +77,12 @@ package side_ch_tb_pkg;
       prx  = phy_rx_agent::type_id::create("prx", this);
       sb   = sch_scoreboard::type_id::create("sb", this);
       regs = side_ch_regs::type_id::create("regs"); regs.configure(null); regs.build();
+      rcov = ow_cov_pkg::ral_access_cov::type_id::create("rcov", this); rcov.blk = regs;
       adapter = axil_reg_adapter::type_id::create("adapter");
       if (!uvm_config_db#(virtual side_ch_side_if)::get(this, "", "side", side)) `uvm_fatal("NOVIF", "side_ch_side_if")
     endfunction
     function void connect_phase(uvm_phase phase);
+      axil.mon.ap.connect(rcov.analysis_export);
       regs.default_map.set_sequencer(axil.sqr, adapter);
       regs.default_map.set_auto_predict(1);
       dma.mon.ap.connect(sb.analysis_export);

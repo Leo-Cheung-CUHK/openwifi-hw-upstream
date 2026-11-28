@@ -389,6 +389,12 @@ def cmd_rxlists(a, var, tools):
     return 0
 
 
+def cmd_cov(a, var, tools):
+    """merge the OWCOV lines of every run under build/xsim/run and check FLOW.md §3 targets"""
+    out = os.path.join(a.build, "xsim", "coverage.md")
+    return py("cov_report.py", "--out", out, os.path.join(a.build, "xsim", "run"))
+
+
 def main():
     var = read_makefile()
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
@@ -401,7 +407,7 @@ def main():
                          "CI runner so the Xilinx IP models survive actions/checkout's clean")
     ap.add_argument("--dry-run", action="store_true", help="print the tool calls, run nothing")
     sp = ap.add_subparsers(dest="cmd", required=True)
-    for n in ("env", "list", "prep", "xip", "rxlists"):
+    for n in ("env", "list", "prep", "xip", "rxlists", "cov"):
         sp.add_parser(n)
     for n in ("run", "regress"):
         p = sp.add_parser(n)
@@ -415,7 +421,7 @@ def main():
     for lvl, m in check_paths(a.hw, a.build):
         if a.cmd != "env": print(f"{lvl}: {m}")
     return {"env": cmd_env, "list": cmd_list, "prep": cmd_prep, "xip": cmd_xip, "run": cmd_run,
-            "regress": cmd_regress, "rxlists": cmd_rxlists}[a.cmd](a, var, tools)
+            "regress": cmd_regress, "rxlists": cmd_rxlists, "cov": cmd_cov}[a.cmd](a, var, tools)
 
 
 if __name__ == "__main__":

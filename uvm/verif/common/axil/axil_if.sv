@@ -30,4 +30,12 @@ interface axil_if (input logic clk, input logic rst_n);
   a_r_stable:  assert property (@(posedge clk) disable iff (!rst_n) (rvalid  && !rready)  |=> $stable(rdata)  && rvalid);
   a_no_x_valid: assert property (@(posedge clk) disable iff (!rst_n)
                   !$isunknown({awvalid, wvalid, bvalid, arvalid, rvalid}));
+  // SVA covers (FLOW.md §3)
+  int unsigned n_c_wr, n_c_rd, n_c_aw_wait, n_c_b_wait;
+  c_wr:      cover property (@(posedge clk) disable iff (!rst_n) awvalid && awready && wvalid && wready) n_c_wr++;
+  c_rd:      cover property (@(posedge clk) disable iff (!rst_n) rvalid && rready) n_c_rd++;
+  c_aw_wait: cover property (@(posedge clk) disable iff (!rst_n) awvalid && !awready) n_c_aw_wait++;
+  c_b_wait:  cover property (@(posedge clk) disable iff (!rst_n) arvalid && !arready) n_c_b_wait++;
+  final $display("OWCOV sva axil.wr %0d\nOWCOV sva axil.rd %0d\nOWCOV sva axil.aw_wait %0d\nOWCOV sva axil.ar_wait %0d",
+                 n_c_wr, n_c_rd, n_c_aw_wait, n_c_b_wait);
 endinterface
