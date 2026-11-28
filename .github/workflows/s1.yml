@@ -42,6 +42,10 @@ jobs:
     env:
       WHAT: ${{ inputs.what || 'regress' }}
       JOBS: ${{ inputs.jobs || '3' }}
+      # push runs: the six block TBs (chip on xsim is S2)
+      TBS: ${{ inputs.tb || (github.event_name == 'push' && 'openofdm_tx openofdm_rx tx_intf rx_intf xpu side_ch' || '') }}
+      # own build tree: the desktop's interactive runs use D:\AI_Openwifi\build at the same time
+      OW_BUILD: 'D:\owb'
       # Vivado root and a persistent build tree outside the checkout come from the runner's .env
       # file (RUNNER.md §2.4): XILINX_VIVADO=D:\Xilinx\Vivado\2022.2, OW_BUILD=D:\owb
       PYTHONUTF8: '1'
@@ -68,7 +72,7 @@ jobs:
         run: |
           # only openofdm_rx and chip use them; build when asked, or when one of those is about to run
           $xip = Join-Path $env:OW_BUILD_DIR 'xip/xip_sources.txt'
-          $tbs = '${{ inputs.tb }}' -split '\s+' | Where-Object { $_ }
+          $tbs = $env:TBS -split '\s+' | Where-Object { $_ }
           $needs = ($env:WHAT -eq 'regress' -and (-not $tbs -or $tbs -match '^(openofdm_rx|chip)$')) -or
                    ($env:WHAT -eq 'run' -and $tbs -match '^(openofdm_rx|chip)$')
           if ($env:WHAT -eq 'xip' -or ($needs -and -not (Test-Path $xip))) {
@@ -80,15 +84,17 @@ jobs:
         if: env.WHAT == 'run'
         run: |
           $tb = '${{ inputs.tb }}'.Trim(); if (-not $tb) { $tb = 'openofdm_tx' }
-          $a = @('run', '--tb', $tb, '--plusargs', '${{ inputs.plusargs }}')
+          $a = @('run', '--tb', $tb)
+          if ('${{ inputs.plusargs }}') { $a += @('--plusargs', '${{ inputs.plusargs }}') }   # PS 5.1 drops '' args
           if ('${{ inputs.test }}') { $a += @('--test', '${{ inputs.test }}') }
           python uvm/sim/xsim.py @a; exit $LASTEXITCODE
 
       - name: Regression
         if: env.WHAT == 'regress'
         run: |
-          $a = @('regress', '--jobs', $env:JOBS, '--plusargs', '${{ inputs.plusargs }}')
-          foreach ($t in ('${{ inputs.tb }}' -split '\s+' | Where-Object { $_ })) { $a += @('--tb', $t) }
+          $a = @('regress', '--jobs', $env:JOBS)
+          if ('${{ inputs.plusargs }}') { $a += @('--plusargs', '${{ inputs.plusargs }}') }
+          foreach ($t in ($env:TBS -split '\s+' | Where-Object { $_ })) { $a += @('--tb', $t) }
           python uvm/sim/xsim.py @a; exit $LASTEXITCODE
 
       - name: Functional coverage (FLOW.md §3 targets)
