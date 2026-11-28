@@ -35,6 +35,26 @@ package openwifi_seq_pkg;
     endtask
   endclass
 
+  // RAL access coverage (FLOW.md §3): read every named register, write the value just read back
+  // into every writable one. Writing the current value leaves the configuration as it was; run it
+  // at the end of a test (registers with write-edge actions see one more write of their value).
+  class ral_touch_seq extends ow_reg_seq_base;
+    `uvm_object_utils(ral_touch_seq)
+    ow_block_base rb;
+    function new(string name = "ral_touch_seq"); super.new(name); endfunction
+    task body();
+      uvm_reg rl[$];
+      rb.get_registers(rl);
+      foreach (rl[i]) begin
+        uvm_status_e st; uvm_reg_data_t d; string n;
+        n = rl[i].get_name();
+        if (n.substr(0, 4) == "RSVD_") continue;
+        rl[i].read(st, d, .parent(this));
+        if (rl[i].get_rights() != "RO") rl[i].write(st, d, .parent(this));
+      end
+    endtask
+  endclass
+
   // openofdm_rx.c hw_init(OPENOFDM_RX_NORMAL)
   class openofdm_rx_init_seq extends ow_reg_seq_base;
     `uvm_object_utils(openofdm_rx_init_seq)

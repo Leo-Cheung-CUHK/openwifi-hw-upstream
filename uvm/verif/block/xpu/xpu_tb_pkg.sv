@@ -651,4 +651,18 @@ package xpu_tb_pkg;
       phase.drop_objection(this);
     endtask
   endclass
+
+  // every named register read, every writable one written with its own value (RAL coverage)
+  class xpu_ral_access_test extends xpu_base_test;
+    `uvm_component_utils(xpu_ral_access_test)
+    function new(string name, uvm_component parent); super.new(name, parent); endfunction
+    task run_phase(uvm_phase phase);
+      ral_touch_seq t = ral_touch_seq::type_id::create("t");
+      phase.raise_objection(this);
+      init_regs();
+      t.rb = env.regs; t.start(null);
+      #1us;
+      phase.drop_objection(this);
+    endtask
+  endclass
 endpackage

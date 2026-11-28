@@ -48,40 +48,42 @@ IPS_openofdm_tx := openofdm_tx
 XIP_openofdm_tx := 0
 SRC_openofdm_tx  := $(V)/block/openofdm_tx/openofdm_tx_tb_pkg.sv $(V)/block/openofdm_tx/tb_openofdm_tx.sv
 TESTS_openofdm_tx := otx_reg_reset_test otx_rate_sweep_test otx_random_test otx_backpressure_test \
-                     otx_scrambler_seed_test otx_ampdu_test otx_reset_midpacket_test
+                     otx_scrambler_seed_test otx_ampdu_test otx_reset_midpacket_test \
+                     otx_ral_access_test otx_cov_test
 
 TOP_openofdm_rx := tb_openofdm_rx
 IPS_openofdm_rx := openofdm_rx
 XIP_openofdm_rx := 1
 SRC_openofdm_rx  := $(V)/block/openofdm_rx/openofdm_rx_tb_pkg.sv $(V)/block/openofdm_rx/tb_openofdm_rx.sv
 TESTS_openofdm_rx := orx_reg_reset_test orx_vectors_test orx_impair_test \
-                     orx_snr_sweep_test orx_len_limits_test orx_b2b_test
+                     orx_snr_sweep_test orx_len_limits_test orx_b2b_test orx_ral_access_test
 
 TOP_tx_intf := tb_tx_intf
 IPS_tx_intf := tx_intf
 XIP_tx_intf := 0
 SRC_tx_intf      := $(V)/block/tx_intf/xpu_stub_ctl_if.sv $(V)/block/tx_intf/xpu_tx_stub.sv $(V)/block/tx_intf/tx_intf_tb_pkg.sv $(V)/block/tx_intf/tb_tx_intf.sv
 TESTS_tx_intf    := txi_basic_test txi_stress_test txi_queues_test txi_ampdu_test txi_cts_toself_test \
-                    txi_arbitrary_iq_test txi_ant_test
+                    txi_arbitrary_iq_test txi_ant_test txi_ral_access_test
 
 TOP_rx_intf := tb_rx_intf
 IPS_rx_intf := rx_intf
 XIP_rx_intf := 0
 SRC_rx_intf      := $(V)/block/rx_intf/rx_side_if.sv $(V)/block/rx_intf/rx_intf_tb_pkg.sv $(V)/block/rx_intf/tb_rx_intf.sv
-TESTS_rx_intf    := rxi_adc_path_test rxi_frames_test rxi_dma_stall_test rxi_loopback_src_test rxi_mute_ant_test
+TESTS_rx_intf    := rxi_adc_path_test rxi_frames_test rxi_dma_stall_test rxi_loopback_src_test rxi_mute_ant_test \
+                    rxi_ral_access_test
 
 TOP_xpu := tb_xpu
 IPS_xpu := xpu
 XIP_xpu := 0
 SRC_xpu          := $(V)/block/xpu/xpu_tx_side_if.sv $(V)/block/xpu/xpu_tb_pkg.sv $(V)/block/xpu/tb_xpu.sv
 TESTS_xpu        := xpu_tsf_test xpu_ack_test xpu_csma_test xpu_retrans_test xpu_filter_test xpu_cts_test \
-                    xpu_blkack_test xpu_rssi_test xpu_slice_test
+                    xpu_blkack_test xpu_rssi_test xpu_slice_test xpu_ral_access_test
 
 TOP_side_ch := tb_side_ch
 IPS_side_ch := side_ch
 XIP_side_ch := 0
 SRC_side_ch      := $(V)/block/side_ch/side_ch_side_if.sv $(V)/block/side_ch/side_ch_tb_pkg.sv $(V)/block/side_ch/tb_side_ch.sv
-TESTS_side_ch    := sch_csi_test sch_match_test sch_iq_capture_test sch_num_eq_test
+TESTS_side_ch    := sch_csi_test sch_match_test sch_iq_capture_test sch_num_eq_test sch_ral_access_test
 
 TOP_chip := tb_chip
 IPS_chip := openofdm_rx openofdm_tx rx_intf tx_intf xpu side_ch

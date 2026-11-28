@@ -360,4 +360,42 @@ package openofdm_tx_tb_pkg;
       phase.drop_objection(this);
     endtask
   endclass
+
+  // every named register read, every writable one written with its own value (RAL coverage)
+  class otx_ral_access_test extends otx_base_test;
+    `uvm_component_utils(otx_ral_access_test)
+    function new(string name, uvm_component parent); super.new(name, parent); endfunction
+    task run_phase(uvm_phase phase);
+      ral_touch_seq t = ral_touch_seq::type_id::create("t");
+      phase.raise_objection(this);
+      init_regs();
+      t.rb = env.regs; t.start(null);
+      #1us;
+      phase.drop_objection(this);
+    endtask
+  endclass
+
+  // wifi_frame coverage closure: every legacy rate and MCS x GI x the five length bins of
+  // wifi_frame_cov (min <= 24, short <= 100, mid <= 600, long <= 1500, jumbo > 1500 B), 120 frames
+  class otx_cov_test extends otx_base_test;
+    `uvm_component_utils(otx_cov_test)
+    function new(string name, uvm_component parent); super.new(name, parent); endfunction
+    task run_phase(uvm_phase phase);
+      int unsigned lens[5] = '{20, 60, 300, 1000, 1600};
+      phase.raise_objection(this);
+      init_regs();
+      for (int h = 0; h < 2; h++)
+        for (int r = (h ? 0 : 4); r <= (h ? 7 : 11); r++)
+          for (int g = 0; g <= h; g++)
+            for (int li = 0; li < 5; li++) begin
+              wifi_frame f = wifi_frame::type_id::create("f");
+              // plain randomize() and fields set afterwards (xsim, finding 10; 1600 B is past c_len)
+              if (!f.randomize()) `uvm_fatal("RAND", "randomize")
+              f.ht = h; f.rate_hw = r; f.sgi = g; f.ht_aggr = 0; f.set_len(lens[li]);
+              env.ptx.sqr.execute_item(f);
+            end
+      #10us;
+      phase.drop_objection(this);
+    endtask
+  endclass
 endpackage
