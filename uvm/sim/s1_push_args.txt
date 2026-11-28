@@ -1,0 +1,3 @@
+# rx_intf X on the DMA stream + IRQ count; openofdm_rx regression with the vector lists
+run --tb rx_intf --test rxi_frames_test
+regress --tb openofdm_rx --jobs 3
