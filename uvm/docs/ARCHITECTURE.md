@@ -337,6 +337,13 @@ Still to check: the `openofdm_rx` RTL decoder's view of bug A (the Python receiv
    xelab sat at "Compiling package work.xpu_tb_pkg" indefinitely (other TBs: ~60 s). Bisected on
    the desktop by compiling variants in parallel: either `2'(q)` or hoisting the block-local
    declarations fixes it. Now `2'(q)` (same value).
+10. **xsim 2022.2 randomization/scoping gaps in the TBs.** (a) `xpu_tb_pkg::mk()`:
+   `randomize() with { rate_hw == local::rate_hw; mpdu_len == len; }` after
+   `c_len.constraint_mode(0)` fails ("randomize failed to meet constraint") in every test that
+   builds a frame with it; rate and length are now assigned after a plain `randomize()`.
+   (b) `rxi_frames_test`: null-object error at time 0 with `phy_rx_item it = create(...)` and
+   `rxi_expect e = create(...)` declared in the `repeat` body; declarations moved to the task
+   top (created per frame as before).
 
 ### Findings from the block TBs in Verilator (2026-11-27)
 

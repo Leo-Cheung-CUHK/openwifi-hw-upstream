@@ -197,12 +197,13 @@ package rx_intf_tb_pkg;
     function new(string name, uvm_component parent); super.new(name, parent); endfunction
     task run_phase(uvm_phase phase);
       int unsigned n = 20;
+      phy_rx_item it; rxi_expect e;   // declared here, created per frame (xsim 2022.2, finding 10)
       phase.raise_objection(this);
       init_regs();
       void'($value$plusargs("N_PKT=%d", n));
       repeat (n) begin
-        phy_rx_item it = phy_rx_item::type_id::create("it");
-        rxi_expect e = rxi_expect::type_id::create("e");
+        it = phy_rx_item::type_id::create("it");
+        e = rxi_expect::type_id::create("e");
         if (!it.randomize() with { corrupt_fcs dist {0 := 4, 1 := 1}; frame.mpdu_len inside {[14:1500]}; })
           `uvm_fatal("RAND", "item")
         e.f = it.frame; e.fcs_ok = !it.corrupt_fcs; e.blocked = ($urandom_range(4) == 0);

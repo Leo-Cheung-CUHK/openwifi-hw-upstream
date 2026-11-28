@@ -262,8 +262,10 @@ package xpu_tb_pkg;
     function wifi_frame mk(bit [15:0] fc, bit [15:0] dur, bit [47:0] a1, bit [47:0] a2 = 0, bit [47:0] a3 = 0,
                            int unsigned len = 60, int unsigned rate_hw = 4);
       wifi_frame f = wifi_frame::type_id::create("f");
-      f.c_len.constraint_mode(0);
-      if (!f.randomize() with { ht == 0; rate_hw == local::rate_hw; mpdu_len == len; }) `uvm_fatal("RAND", "frame")
+      // set rate/length after randomize(): xsim 2022.2 fails this inline constraint (finding 10)
+      if (!f.randomize() with { ht == 0; }) `uvm_fatal("RAND", "frame")
+      f.rate_hw = rate_hw; f.mpdu_len = len; f.mpdu = new[len];
+      foreach (f.mpdu[k]) f.mpdu[k] = 8'($urandom);
       f.mpdu[0] = fc[7:0]; f.mpdu[1] = fc[15:8]; f.mpdu[2] = dur[7:0]; f.mpdu[3] = dur[15:8];
       for (int k = 0; k < 6; k++) begin
         if (4 + k < len)  f.mpdu[4 + k]  = a1[8*k +: 8];
