@@ -38,7 +38,7 @@ jobs:
     timeout-minutes: 480
     defaults:
       run:
-        shell: pwsh
+        shell: powershell     # Windows PowerShell 5.1 (pwsh 7 is not on the desktop)
     env:
       WHAT: ${{ inputs.what || 'regress' }}
       JOBS: ${{ inputs.jobs || '3' }}
@@ -56,7 +56,7 @@ jobs:
       - name: Runner check
         run: |
           $b = if ($env:OW_BUILD) { $env:OW_BUILD } else { Join-Path $PWD 'uvm/build' }
-          "OW_BUILD_DIR=$b" >> $env:GITHUB_ENV
+          [IO.File]::AppendAllText($env:GITHUB_ENV, "OW_BUILD_DIR=$b`n")   # UTF-8, no BOM (PS 5.1 '>>' writes UTF-16)
           python uvm/sim/xsim.py env; exit $LASTEXITCODE
 
       - name: Prepare RTL tree
@@ -97,7 +97,7 @@ jobs:
           python uvm/sim/xsim.py cov
           $rc = $LASTEXITCODE
           $md = Join-Path $env:OW_BUILD_DIR 'xsim/coverage.md'
-          if ($env:GITHUB_STEP_SUMMARY -and (Test-Path $md)) { Get-Content $md | Add-Content $env:GITHUB_STEP_SUMMARY }
+          if ($env:GITHUB_STEP_SUMMARY -and (Test-Path $md)) { [IO.File]::AppendAllText($env:GITHUB_STEP_SUMMARY, [IO.File]::ReadAllText($md)) }
           exit $rc
 
       - name: Logs
