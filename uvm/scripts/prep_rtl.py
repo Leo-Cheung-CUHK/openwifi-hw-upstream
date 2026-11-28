@@ -36,6 +36,15 @@ SIM_PATCHES = {
     # leaves the upper 12 bits Z (same class as the tx_intf fix a5369c9)
     ("openofdm_rx", "openofdm_rx.v"): [(".min_signal_len_th(slv_reg4[15:12]),",
                                         ".min_signal_len_th({12'd0, slv_reg4[15:12]}),")],
+    # div_gen_csi_over_nova's AXI-Stream ports are byte-padded (divisor 32, dividend 40, dout 40 bits);
+    # synthesis zero-extends/drops the padding, xsim rejects the width mismatch at a VHDL port
+    ("openofdm_rx", "ofdm_decoder.v"): [
+        ("wire [35:0] csi_square_over_noise_var_full;",
+         "wire [35:0] csi_square_over_noise_var_full; wire [3:0] csi_square_over_noise_var_pad;"),
+        (".s_axis_divisor_tdata(noise_var_new),", ".s_axis_divisor_tdata({7'd0, noise_var_new}),"),
+        (".s_axis_dividend_tdata(csi_square_scaled),", ".s_axis_dividend_tdata({6'd0, csi_square_scaled}),"),
+        (".m_axis_dout_tdata(csi_square_over_noise_var_full)",
+         ".m_axis_dout_tdata({csi_square_over_noise_var_pad, csi_square_over_noise_var_full})")],
 }
 # testbenches / unused models that live next to the RTL
 EXCLUDE = re.compile(r"(_tb\.v$|^rand_gen_tb\.v$)")
