@@ -5,6 +5,10 @@
 name: S1 (xsim, Windows desktop)
 
 on:
+  # push to an s1/** branch = full regression (what=regress, all TBs, jobs=3): workflow_dispatch
+  # only works for workflows on the default branch. Only collaborators can push branches here.
+  push:
+    branches: ['s1/**']
   workflow_dispatch:
     inputs:
       what:
@@ -36,6 +40,8 @@ jobs:
       run:
         shell: pwsh
     env:
+      WHAT: ${{ inputs.what || 'regress' }}
+      JOBS: ${{ inputs.jobs || '3' }}
       # Vivado root and a persistent build tree outside the checkout come from the runner's .env
       # file (RUNNER.md §2.4): XILINX_VIVADO=D:\Xilinx\Vivado\2022.2, OW_BUILD=D:\owb
       PYTHONUTF8: '1'
@@ -54,24 +60,24 @@ jobs:
           python uvm/sim/xsim.py env; exit $LASTEXITCODE
 
       - name: Prepare RTL tree
-        if: inputs.what != 'env'
+        if: env.WHAT != 'env'
         run: python uvm/sim/xsim.py prep
 
       - name: Xilinx IP models
-        if: inputs.what != 'env'
+        if: env.WHAT != 'env'
         run: |
           # only openofdm_rx and chip use them; build when asked, or when one of those is about to run
           $xip = Join-Path $env:OW_BUILD_DIR 'xip/xip_sources.txt'
           $tbs = '${{ inputs.tb }}' -split '\s+' | Where-Object { $_ }
-          $needs = ('${{ inputs.what }}' -eq 'regress' -and (-not $tbs -or $tbs -match '^(openofdm_rx|chip)$')) -or
-                   ('${{ inputs.what }}' -eq 'run' -and $tbs -match '^(openofdm_rx|chip)$')
-          if ('${{ inputs.what }}' -eq 'xip' -or ($needs -and -not (Test-Path $xip))) {
+          $needs = ($env:WHAT -eq 'regress' -and (-not $tbs -or $tbs -match '^(openofdm_rx|chip)$')) -or
+                   ($env:WHAT -eq 'run' -and $tbs -match '^(openofdm_rx|chip)$')
+          if ($env:WHAT -eq 'xip' -or ($needs -and -not (Test-Path $xip))) {
             python uvm/sim/xsim.py xip; exit $LASTEXITCODE
           }
           "Xilinx IP models: $(if (Test-Path $xip) { 'present' } else { 'not needed for this run' })"
 
       - name: Run test
-        if: inputs.what == 'run'
+        if: env.WHAT == 'run'
         run: |
           $tb = '${{ inputs.tb }}'.Trim(); if (-not $tb) { $tb = 'openofdm_tx' }
           $a = @('run', '--tb', $tb, '--plusargs', '${{ inputs.plusargs }}')
@@ -79,14 +85,14 @@ jobs:
           python uvm/sim/xsim.py @a; exit $LASTEXITCODE
 
       - name: Regression
-        if: inputs.what == 'regress'
+        if: env.WHAT == 'regress'
         run: |
-          $a = @('regress', '--jobs', '${{ inputs.jobs }}', '--plusargs', '${{ inputs.plusargs }}')
+          $a = @('regress', '--jobs', $env:JOBS, '--plusargs', '${{ inputs.plusargs }}')
           foreach ($t in ('${{ inputs.tb }}' -split '\s+' | Where-Object { $_ })) { $a += @('--tb', $t) }
           python uvm/sim/xsim.py @a; exit $LASTEXITCODE
 
       - name: Functional coverage (FLOW.md §3 targets)
-        if: always() && inputs.what == 'regress'
+        if: always() && env.WHAT == 'regress'
         run: |
           python uvm/sim/xsim.py cov
           $rc = $LASTEXITCODE
@@ -95,7 +101,7 @@ jobs:
           exit $rc
 
       - name: Logs
-        if: always() && inputs.what != 'env'
+        if: always() && env.WHAT != 'env'
         uses: actions/upload-artifact@v4
         with:
           name: s1-logs
