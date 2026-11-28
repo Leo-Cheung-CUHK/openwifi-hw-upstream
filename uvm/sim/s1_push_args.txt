@@ -1,0 +1,3 @@
+# xpu regression with the coverage-closure stimulus and finding M, then merged coverage
+regress --tb xpu --jobs 3
+cov
