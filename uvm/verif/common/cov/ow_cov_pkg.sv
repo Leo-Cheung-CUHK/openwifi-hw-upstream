@@ -34,7 +34,7 @@ package ow_cov_pkg;
     function new(string name, uvm_component parent); super.new(name, parent); endfunction
     function void start_of_simulation_phase(uvm_phase phase);
       uvm_reg rl[$];
-      space = {"ral_", blk.get_name()};
+      space = {"ral_", blk.get_type_name()};   // instance names are all "regs"
       blk.get_registers(rl);
       foreach (rl[i]) begin
         string n = rl[i].get_name();
