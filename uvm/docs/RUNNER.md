@@ -152,10 +152,9 @@ desktop (Windows, Vivado 2022.2, checkout `D:\AI_Openwifi\ow`):
   | xpu | 8/9 | `xpu_csma_test`: 9 of 16 busy-medium cases off; see below |
   | side_ch | 4/4 | |
 
-  Needed: tx_intf port widths (a5369c9), findings 9 and 10. Open: in `xpu_csma_test` every
-  measured backoff fits the queue's CW, but on queues 1–3 it often does not match the
-  `num_slot_random` the TB samples at `backoff_done` (shorter by 2–4 slots, once longer) —
-  needs a waveform side by side with Verilator.
+  Needed: tx_intf port widths (a5369c9), findings 9 and 10. Since then (2026-11-28) the
+  `xpu_csma_test` mismatch turned out to be RTL finding L, and E/F, I/J, L were fixed: tx_intf
+  7/7, xpu 9/9 after the fixes. Current per-test results: [STATUS.md](STATUS.md) §2.
 * openofdm_rx on xsim (2026-11-27 night, first run in any simulator): `xsim.py xip` works with
   the Viterbi evaluation licence (fixes in `gen_xilinx_ip_sim.tcl`: compile order per IP, `.coe/.mif`
   to `xip_data.txt`); the sim copy of the RTL zero-extends `min_signal_len_th` and the byte-padded
