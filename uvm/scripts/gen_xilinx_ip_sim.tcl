@@ -54,7 +54,8 @@ upgrade_ip [get_ips] -quiet
 generate_target simulation [get_ips]
 
 # simulator-agnostic compile list: "<library> <verilog|systemverilog|vhdl> <path>", in order
-set fh [open $out/xip_sources.txt w]
+file delete -force $out/xip_sources.txt
+set fh [open $out/xip_sources.txt.tmp w]   ;# renamed when complete, so a failed run leaves no list
 # -compile_order takes one IP at a time; shared library files (xbip_*, ...) are listed once
 set seen [dict create]
 foreach ip [get_ips] {
@@ -68,6 +69,7 @@ foreach ip [get_ips] {
 }
 puts $fh "xil_defaultlib verilog $out/div_gen.v"
 close $fh
+file rename -force $out/xip_sources.txt.tmp $out/xip_sources.txt
 
 set args [list -of_objects [get_ips] -simulator $sim -directory $out/export -force -use_ip_compiled_libs]
 if {$libmap ne ""} { lappend args -lib_map_path $libmap }
