@@ -1,0 +1,2 @@
+# openofdm_rx regression with sova_dec (VIT=sova), clean build tree D:\owb: compare with the Xilinx run
+--vit sova regress --tb openofdm_rx --jobs 3
