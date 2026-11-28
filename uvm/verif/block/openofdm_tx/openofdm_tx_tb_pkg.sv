@@ -304,9 +304,9 @@ package openofdm_tx_tb_pkg;
           repeat (l) m.push_back(8'($urandom));
         end
         ampdu_pack(m, lens, a);
-        f.c_aggr.constraint_mode(0);
-        if (!f.randomize() with { ht == 1; ht_aggr == 1; rate_hw == cfgs[c][0]; sgi == cfgs[c][1]; mpdu_len == a.size(); })
-          `uvm_fatal("RAND", "randomize")
+        // fields set after a plain randomize(): xsim 2022.2 null-object error on randomize() with {} here (finding 10)
+        if (!f.randomize()) `uvm_fatal("RAND", "randomize")
+        f.ht = 1; f.ht_aggr = 1; f.rate_hw = cfgs[c][0]; f.sgi = cfgs[c][1]; f.mpdu_len = a.size();
         f.mpdu = new[a.size()]; foreach (a[k]) f.mpdu[k] = a[k];
         `uvm_info("OTX_AMPDU", $sformatf("%s: %0d subframes, PSDU %0d B", f.rate_str(), lens.size(), a.size()), UVM_LOW)
         env.ptx.sqr.execute_item(f);

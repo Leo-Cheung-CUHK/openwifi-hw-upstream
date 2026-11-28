@@ -264,8 +264,7 @@ package xpu_tb_pkg;
       wifi_frame f = wifi_frame::type_id::create("f");
       // set rate/length after randomize(): xsim 2022.2 fails this inline constraint (finding 10)
       if (!f.randomize() with { ht == 0; }) `uvm_fatal("RAND", "frame")
-      f.rate_hw = rate_hw; f.mpdu_len = len; f.mpdu = new[len];
-      foreach (f.mpdu[k]) f.mpdu[k] = 8'($urandom);
+      f.rate_hw = rate_hw; f.set_len(len);
       f.mpdu[0] = fc[7:0]; f.mpdu[1] = fc[15:8]; f.mpdu[2] = dur[7:0]; f.mpdu[3] = dur[15:8];
       for (int k = 0; k < 6; k++) begin
         if (4 + k < len)  f.mpdu[4 + k]  = a1[8*k +: 8];

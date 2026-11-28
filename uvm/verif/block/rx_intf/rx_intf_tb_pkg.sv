@@ -204,8 +204,9 @@ package rx_intf_tb_pkg;
       repeat (n) begin
         it = phy_rx_item::type_id::create("it");
         e = rxi_expect::type_id::create("e");
-        // no `dist` here: xsim 2022.2 stops at time 0 with a null-object error (finding 10)
-        if (!it.randomize() with { frame.mpdu_len inside {[14:1500]}; }) `uvm_fatal("RAND", "item")
+        // no inline constraint in run_phase: xsim 2022.2 stops at time 0 with a null-object error (finding 10)
+        if (!it.randomize()) `uvm_fatal("RAND", "item")
+        it.frame.set_len($urandom_range(1500, 14));
         it.corrupt_fcs = ($urandom_range(4) == 0);                       // ~20% FCS errors
         e.f = it.frame; e.fcs_ok = !it.corrupt_fcs; e.blocked = ($urandom_range(4) == 0);
         e.rssi = 11'($urandom_range(400)); e.gpio = 8'($urandom); e.tsf_min = env.side.tsf;

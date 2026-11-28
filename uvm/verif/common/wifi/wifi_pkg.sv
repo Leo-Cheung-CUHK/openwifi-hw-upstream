@@ -112,6 +112,12 @@ package wifi_pkg;
       foreach (mpdu[k]) mpdu[k] = 8'($urandom);
     endfunction
 
+    // new length with a fresh random payload (for callers that fix the length after randomize())
+    function void set_len(int unsigned n);
+      mpdu_len = n; mpdu = new[n];
+      foreach (mpdu[k]) mpdu[k] = 8'($urandom);
+    endfunction
+
     function string rate_str();
       return ht ? $sformatf("HT-MCS%0d%s", rate_hw, sgi ? "-SGI" : "") : $sformatf("%0dMbps", legacy_mbps(rate_hw));
     endfunction

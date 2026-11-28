@@ -470,8 +470,9 @@ package tx_intf_tb_pkg;
         time gap;
         data_code = d.ht ? 4'(d.rate_hw) : legacy_rate_code(d.rate_hw);   // not an initializer: it reads d (xsim, finding 10)
         cts_hw = traffic ? (d.ht ? 4 : d.rate_hw) : rates[r];
-        c.c_len.constraint_mode(0);                    // a CTS MPDU is 10 bytes (c_len: >= 14)
-        if (!c.randomize() with { ht == 0; rate_hw == cts_hw; mpdu_len == 10; need_ack == 0; }) `uvm_fatal("RAND", "cts")
+        // fields set after a plain randomize(): xsim 2022.2 null-object error on randomize() with {} here (finding 10)
+        if (!c.randomize()) `uvm_fatal("RAND", "cts")
+        c.ht = 0; c.sgi = 0; c.ht_aggr = 0; c.rate_hw = cts_hw; c.need_ack = 0; c.set_len(10);   // a CTS MPDU is 10 bytes
         c.mpdu[0] = 8'hC4; c.mpdu[1] = 8'h00; c.mpdu[2] = dur[7:0]; c.mpdu[3] = dur[15:8];
         for (int k = 0; k < 6; k++) c.mpdu[4 + k] = mac[8*k +: 8];
         expect_air(c); expect_air(d);
