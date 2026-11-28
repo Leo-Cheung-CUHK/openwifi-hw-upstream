@@ -13,6 +13,7 @@
 # Output: <out_dir>/xip_sources.txt  "<library> <language> <file>" in compile order
 #                                    (consumed by sim/Makefile, any simulator)
 #         <out_dir>/export/<simulator>/ export_simulation scripts (reference / fallback)
+#         <out_dir>/xip_data.txt     init files (.coe/.mif) the models read at run time; copy to the sim dir
 #         <out_dir>/div_gen.v       plain wrapper used by dot11.v
 
 set hw   [lindex $argv 0]
@@ -57,19 +58,26 @@ generate_target simulation [get_ips]
 file delete -force $out/xip_sources.txt
 set fh [open $out/xip_sources.txt.tmp w]   ;# renamed when complete, so a failed run leaves no list
 # -compile_order takes one IP at a time; shared library files (xbip_*, ...) are listed once
-set seen [dict create]
+set seen [dict create]; set data {}
 foreach ip [get_ips] {
   foreach f [get_files -compile_order sources -used_in simulation -of_objects $ip] {
     if {[dict exists $seen $f]} { continue }
     dict set seen $f 1
     set t [string tolower [get_property FILE_TYPE $f]]
-    if {[string match "*vhdl*" $t]} { set t vhdl } elseif {[string match "*systemverilog*" $t]} { set t systemverilog } else { set t verilog }
+    if {[string match "*vhdl*" $t]} { set t vhdl } elseif {[string match "*systemverilog*" $t]} { set t systemverilog } \
+    elseif {[string match "*verilog*" $t]} { set t verilog } else {
+      # .coe/.mif/.mem: read by the models at run time from the sim directory, not compiled
+      lappend data $f; continue
+    }
     puts $fh "[get_property LIBRARY $f] $t $f"
   }
 }
 puts $fh "xil_defaultlib verilog $out/div_gen.v"
 close $fh
 file rename -force $out/xip_sources.txt.tmp $out/xip_sources.txt
+set fh [open $out/xip_data.txt w]
+foreach f $data { puts $fh $f }
+close $fh
 
 set args [list -of_objects [get_ips] -simulator $sim -directory $out/export -force -use_ip_compiled_libs]
 if {$libmap ne ""} { lappend args -lib_map_path $libmap }

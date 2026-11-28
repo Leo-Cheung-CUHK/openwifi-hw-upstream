@@ -216,6 +216,8 @@ def xip_groups(list_file):
         if len(parts) != 3:
             continue
         lib, lang, f = parts
+        if f.lower().endswith((".coe", ".mif", ".mem")):
+            continue                          # init data, not HDL (older lists had them)
         lang = "vhdl" if lang == "vhdl" else "verilog"
         if groups and groups[-1][0] == lib and groups[-1][1] == lang:
             groups[-1][2].append(f)
@@ -281,6 +283,10 @@ def compile_tb(a, var, tools, tb, d):
     # $readmemh files are opened relative to the simulation directory (ifftmain.v)
     for m in glob.glob(os.path.join(a.hw, "ip", "openofdm_tx", "src", "icmem_*.mem")):
         shutil.copy(m, work)
+    xdata = os.path.join(a.build, "xip", "xip_data.txt")     # Xilinx IP init files (.coe/.mif)
+    if d.get("xip") and os.path.isfile(xdata):
+        for f in open(xdata, encoding="utf-8").read().split():
+            if os.path.isfile(f): shutil.copy(f, work)
     if not tools.dry:
         open(stamp, "w").write(time.ctime() + "\n")
     return True
